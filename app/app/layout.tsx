@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Orbitron, Inter, Space_Grotesk, Press_Start_2P } from "next/font/google";
 import "./globals.css";
+import { SiteNavbar } from "@/components/site-navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -10,6 +11,30 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const orbitron = Orbitron({
+  variable: "--font-orbitron",
+  subsets: ["latin"],
+  weight: "700", // Bold for headings
+});
+
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  weight: "400", // Regular for body
+});
+
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  subsets: ["latin"],
+  weight: "500", // Medium for numbers
+});
+
+const pressStart2P = Press_Start_2P({
+  variable: "--font-press-start",
+  subsets: ["latin"],
+  weight: "400", // Only weight available
 });
 
 export const metadata: Metadata = {
@@ -25,8 +50,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${orbitron.variable} ${inter.variable} ${spaceGrotesk.variable} ${pressStart2P.variable} antialiased`}
       >
+        <SiteNavbar />
         {children}
       </body>
     </html>
