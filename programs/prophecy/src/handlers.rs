@@ -1,6 +1,5 @@
 use anchor_lang::prelude::*;
 use crate::context::*;
-use crate::state::*;
 use crate::errors::ErrorCode;
 use crate::events::*;
 use crate::helpers::calculate_new_price;
@@ -12,6 +11,7 @@ pub fn initialize_stream_handler(
     team_b_name: String,
     initial_price: u64,
     stream_duration: i64,
+    stream_link: String,
 ) -> Result<()> {
     require!(team_a_name.len() <= 32, ErrorCode::NameTooLong);
     require!(team_b_name.len() <= 32, ErrorCode::NameTooLong);
@@ -35,6 +35,7 @@ pub fn initialize_stream_handler(
     stream.is_active = true;
     stream.winning_team = 0; // 0 = not decided, 1 = team A, 2 = team B
     stream.bump = ctx.bumps.stream;
+    stream.stream_link = stream_link;
 
     emit!(StreamInitialized {
         stream_id,
@@ -43,7 +44,8 @@ pub fn initialize_stream_handler(
         team_b_name: stream.team_b_name.clone(),
         initial_price,
         end_time: stream.end_time,
-    });
+        stream_link: stream.stream_link.clone(),
+        });
 
     Ok(())
 }

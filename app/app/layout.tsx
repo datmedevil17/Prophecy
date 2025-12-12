@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Orbitron, Inter, Space_Grotesk, Press_Start_2P } from "next/font/google";
 import "./globals.css";
 import { SiteNavbar } from "@/components/site-navbar";
+import { AIAssistant } from "@/components/ai-assistant";
+import AppWalletProvider from "@/components/AppWalletProvider";
+import { ReactQueryProvider } from "@/providers/providers";
+import '@solana/wallet-adapter-react-ui/styles.css'
+
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -52,8 +57,17 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${orbitron.variable} ${inter.variable} ${spaceGrotesk.variable} ${pressStart2P.variable} antialiased`}
       >
-        <SiteNavbar />
-        {children}
+       <ReactQueryProvider>
+            <AppWalletProvider>
+              <SiteNavbar/>
+            
+                {children}
+                <AIAssistant/>
+             
+
+    
+            </AppWalletProvider>
+        </ReactQueryProvider>
       </body>
     </html>
   );

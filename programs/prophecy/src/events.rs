@@ -8,6 +8,7 @@ pub struct StreamInitialized {
     pub team_b_name: String,
     pub initial_price: u64,
     pub end_time: i64,
+    pub stream_link: String,
 }
 
 #[event]

@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("E64gnGAQXLDyEjANR3rgtKLGukDsd1WSbL9ZHvAmqKCw");
+declare_id!("7Z3EDnUXfjLqN2SkkuEYyX6uNhmGQ9HWvJUXRwr9HKcd");
 
 pub mod errors;
 pub mod events;
@@ -11,11 +11,7 @@ pub mod handlers;
 
 pub use context::*;
 pub use state::*;
-pub use errors::*;
 pub use events::*;
-
-use crate::helpers::*;
-use crate::handlers::*;
 
 #[program]
 pub mod prediction_market {
@@ -28,8 +24,9 @@ pub mod prediction_market {
         team_b_name: String,
         initial_price: u64,
         stream_duration: i64,
+        stream_link: String,
     ) -> Result<()> {
-        handlers::initialize_stream_handler(ctx, stream_id, team_a_name, team_b_name, initial_price, stream_duration)
+        handlers::initialize_stream_handler(ctx, stream_id, team_a_name, team_b_name, initial_price, stream_duration, stream_link)
     }
 
     pub fn purchase_shares(

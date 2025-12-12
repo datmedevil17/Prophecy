@@ -22,57 +22,36 @@ export const FloatingNav = ({
   className?: string;
   actions?: React.ReactNode;
 }) => {
-  const { scrollYProgress } = useScroll();
-
-  const [visible, setVisible] = useState(true);
-
-  useMotionValueEvent(scrollYProgress, "change", (current) => {
-    // Check if current is not undefined and is a number
-    if (typeof current === "number") {
-      let direction = current! - scrollYProgress.getPrevious()!;
-
-      if (scrollYProgress.get() < 0.05) {
-        setVisible(true);
-      } else {
-        if (direction < 0) {
-          setVisible(true);
-        } else {
-          setVisible(false);
-        }
-      }
-    }
-  });
-
   return (
-    <AnimatePresence mode="wait">
+    <div className="flex justify-center w-full fixed top-4 z-[5000] px-4">
       <motion.div
         initial={{
-          opacity: 1,
-          y: -100,
+          opacity: 0,
+          y: -20,
         }}
         animate={{
-          y: visible ? 0 : -100,
-          opacity: visible ? 1 : 0,
+          y: 0,
+          opacity: 1,
         }}
         transition={{
           duration: 0.2,
         }}
         className={cn(
-          "flex w-full fixed top-0 inset-x-0 mx-auto border-b border-black/5 dark:border-white/[0.2] bg-white/80 dark:bg-black/80 backdrop-blur-md z-[5000] px-8 py-4 items-center justify-between",
+          "flex w-full max-w-4xl border-2 border-zinc-900 bg-white rounded-none px-8 py-3 items-center justify-between shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]",
           className
         )}
       >
         <div className="flex items-center space-x-6">
-           {navItems.map((navItem: any, idx: number) => (
+          {navItems.map((navItem: any, idx: number) => (
             <Link
               key={`link=${idx}`}
               href={navItem.link}
               className={cn(
-                "relative dark:text-neutral-50 items-center flex space-x-1 text-neutral-600 dark:hover:text-neutral-300 hover:text-neutral-500 hover:scale-105 transition-transform"
+                "relative items-center flex space-x-1 text-zinc-600 hover:text-zinc-900 transition-colors font-mono uppercase tracking-widest text-xs font-bold"
               )}
             >
               <span className="block sm:hidden">{navItem.icon}</span>
-              <span className="hidden sm:block text-sm font-medium">{navItem.name}</span>
+              <span className="hidden sm:block">{navItem.name}</span>
             </Link>
           ))}
         </div>
@@ -81,6 +60,6 @@ export const FloatingNav = ({
             {actions}
         </div>
       </motion.div>
-    </AnimatePresence>
+    </div>
   );
 };

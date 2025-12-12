@@ -1,9 +1,16 @@
 "use client";
 
 import { FloatingNav } from "@/components/ui/floating-navbar";
-import { Wallet } from "lucide-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useEffect, useState } from "react";
 
 export function SiteNavbar() {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const navItems = [
     { name: "Home", link: "/" },
     { name: "Streams", link: "/streams" },
@@ -17,10 +24,24 @@ export function SiteNavbar() {
       navItems={navItems}
       className=""
       actions={
-        <button className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white px-4 py-2 rounded-full font-medium transition-all shadow-lg hover:shadow-cyan-500/20">
-          <Wallet className="h-4 w-4" />
-          <span>Connect Wallet</span>
-        </button>
+        <div className="hidden md:flex items-center">
+          {isMounted && (
+            <WalletMultiButton
+              style={{
+                backgroundColor: "#18181b", // zinc-900
+                color: "white",
+                borderRadius: "0px",
+                border: "2px solid #18181b",
+                padding: "0.5rem 1rem",
+                fontSize: "0.875rem",
+                fontWeight: "700",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                boxShadow: "4px 4px 0px 0px rgba(0,0,0,0.2)",
+              }}
+            />
+          )}
+        </div>
       }
     />
   );

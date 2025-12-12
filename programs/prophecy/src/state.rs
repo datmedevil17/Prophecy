@@ -18,6 +18,8 @@ pub struct Stream {
     pub end_time: i64,
     pub is_active: bool,
     pub winning_team: u8,
+    #[max_len(256)]
+    pub stream_link: String,
     pub bump: u8,
 }
 

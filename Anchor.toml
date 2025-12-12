@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-prophecy = "EUUuFWSAzWCUqo6cZyAwWim6jQs3mVKGbCA4XjJG3EJM"
+prophecy = "7Z3EDnUXfjLqN2SkkuEYyX6uNhmGQ9HWvJUXRwr9HKcd"
 
 [registry]
 url = "https://api.apr.dev"
