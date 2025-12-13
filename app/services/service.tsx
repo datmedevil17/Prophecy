@@ -317,6 +317,20 @@ export const getUsersStreams = async (
   ]);
 };
 
+export const getUserPositions = async (
+  program: Program<PredictionMarket>,
+  wallet: Wallet
+) => {
+  return await program.account.userPosition.all([
+    {
+      memcmp: {
+        offset: 8, // Discriminator is 8 bytes, user is the first field
+        bytes: wallet.publicKey.toBase58(),
+      },
+    },
+  ]);
+};
+
 export const getNextStreamId = async (program: Program<PredictionMarket>) => {
   const streams = await program.account.stream.all();
   let maxId = new BN(0);

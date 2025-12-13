@@ -1,51 +1,64 @@
-use anchor_lang::prelude::*;
 use crate::context::*;
 use crate::errors::ErrorCode;
 use crate::events::*;
-use crate::helpers::calculate_new_price;
+use crate::helpers::*;
+use anchor_lang::prelude::*;
 
 pub fn initialize_stream_handler(
     ctx: Context<InitializeStream>,
     stream_id: u64,
     team_a_name: String,
     team_b_name: String,
-    initial_price: u64,
+    initial_liquidity: u64, // NEW: Total virtual liquidity (e.g., 100 SOL = 100_000_000_000 lamports)
     stream_duration: i64,
     stream_link: String,
 ) -> Result<()> {
     require!(team_a_name.len() <= 32, ErrorCode::NameTooLong);
     require!(team_b_name.len() <= 32, ErrorCode::NameTooLong);
-    require!(initial_price > 0, ErrorCode::InvalidPrice);
+    require!(initial_liquidity > 0, ErrorCode::InvalidPrice);
+    require!(initial_liquidity % 2 == 0, ErrorCode::InvalidPrice); // Must be even for 50-50 split
     require!(stream_duration > 0, ErrorCode::InvalidDuration);
 
     let stream = &mut ctx.accounts.stream;
     let clock = Clock::get()?;
 
+    // Initialize with 50-50 reserves (equal odds)
+    let half_liquidity = initial_liquidity
+        .checked_div(2)
+        .ok_or(ErrorCode::MathOverflow)?;
+
     stream.authority = ctx.accounts.authority.key();
     stream.stream_id = stream_id;
     stream.team_a_name = team_a_name;
     stream.team_b_name = team_b_name;
-    stream.team_a_shares = 0;
-    stream.team_b_shares = 0;
-    stream.team_a_price = initial_price;
-    stream.team_b_price = initial_price;
+
+    // CPMM: Set initial reserves
+    stream.team_a_reserve = half_liquidity;
+    stream.team_b_reserve = half_liquidity;
+
+    stream.team_a_shares_sold = 0;
+    stream.team_b_shares_sold = 0;
     stream.total_pool = 0;
     stream.start_time = clock.unix_timestamp;
     stream.end_time = clock.unix_timestamp + stream_duration;
     stream.is_active = true;
-    stream.winning_team = 0; // 0 = not decided, 1 = team A, 2 = team B
+    stream.winning_team = 0;
     stream.bump = ctx.bumps.stream;
     stream.stream_link = stream_link;
+
+    // Calculate initial price (should be 1.0 for equal reserves)
+    let initial_price = calculate_price(stream.team_a_reserve, stream.team_b_reserve)?;
 
     emit!(StreamInitialized {
         stream_id,
         authority: ctx.accounts.authority.key(),
         team_a_name: stream.team_a_name.clone(),
         team_b_name: stream.team_b_name.clone(),
+        initial_liquidity,
         initial_price,
         end_time: stream.end_time,
         stream_link: stream.stream_link.clone(),
-        });
+    });
 
     Ok(())
 }
@@ -54,7 +67,7 @@ pub fn purchase_shares_handler(
     ctx: Context<PurchaseShares>,
     stream_id: u64,
     team_id: u8,
-    amount: u64,
+    sol_amount: u64, // NEW: User specifies SOL to spend (in lamports)
 ) -> Result<()> {
     let stream = &mut ctx.accounts.stream;
     let user_position = &mut ctx.accounts.user_position;
@@ -62,20 +75,25 @@ pub fn purchase_shares_handler(
 
     // Validate stream is active
     require!(stream.is_active, ErrorCode::StreamNotActive);
-    require!(clock.unix_timestamp < stream.end_time, ErrorCode::StreamEnded);
+    require!(
+        clock.unix_timestamp < stream.end_time,
+        ErrorCode::StreamEnded
+    );
     require!(team_id == 1 || team_id == 2, ErrorCode::InvalidTeam);
-    require!(amount > 0, ErrorCode::InvalidAmount);
+    require!(sol_amount > 0, ErrorCode::InvalidAmount);
 
-    // Calculate current price and cost
-    let current_price = if team_id == 1 {
-        stream.team_a_price
+    // Get reserves for the team being purchased
+    let (reserve_team, reserve_opposite) = if team_id == 1 {
+        (stream.team_a_reserve, stream.team_b_reserve)
     } else {
-        stream.team_b_price
+        (stream.team_b_reserve, stream.team_a_reserve)
     };
 
-    let total_cost = current_price
-        .checked_mul(amount)
-        .ok_or(ErrorCode::MathOverflow)?;
+    // Calculate price before trade
+    let price_before = calculate_price(reserve_team, reserve_opposite)?;
+
+    // CPMM: Calculate shares out using constant product formula
+    let shares_out = calculate_shares_out(sol_amount, reserve_team, reserve_opposite)?;
 
     // Transfer SOL from user to stream vault
     let cpi_context = CpiContext::new(
@@ -85,50 +103,49 @@ pub fn purchase_shares_handler(
             to: ctx.accounts.stream_vault.to_account_info(),
         },
     );
-    anchor_lang::system_program::transfer(cpi_context, total_cost)?;
+    anchor_lang::system_program::transfer(cpi_context, sol_amount)?;
 
-    // Update stream state
-    stream.total_pool = stream.total_pool
-        .checked_add(total_cost)
+    // Update stream reserves and shares
+    if team_id == 1 {
+        stream.team_a_reserve = stream
+            .team_a_reserve
+            .checked_sub(shares_out)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stream.team_b_reserve = stream
+            .team_b_reserve
+            .checked_add(sol_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stream.team_a_shares_sold = stream
+            .team_a_shares_sold
+            .checked_add(shares_out)
+            .ok_or(ErrorCode::MathOverflow)?;
+    } else {
+        stream.team_b_reserve = stream
+            .team_b_reserve
+            .checked_sub(shares_out)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stream.team_a_reserve = stream
+            .team_a_reserve
+            .checked_add(sol_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stream.team_b_shares_sold = stream
+            .team_b_shares_sold
+            .checked_add(shares_out)
+            .ok_or(ErrorCode::MathOverflow)?;
+    }
+
+    stream.total_pool = stream
+        .total_pool
+        .checked_add(sol_amount)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    if team_id == 1 {
-        stream.team_a_shares = stream.team_a_shares
-            .checked_add(amount)
-            .ok_or(ErrorCode::MathOverflow)?;
-        
-        // Increase team A price based on demand (bonding curve)
-        stream.team_a_price = calculate_new_price(
-            stream.team_a_price,
-            stream.team_a_shares,
-            true,
-        )?;
-        
-        // Decrease team B price slightly
-        stream.team_b_price = calculate_new_price(
-            stream.team_b_price,
-            stream.team_b_shares,
-            false,
-        )?;
+    // Calculate price after trade
+    let (reserve_team_after, reserve_opposite_after) = if team_id == 1 {
+        (stream.team_a_reserve, stream.team_b_reserve)
     } else {
-        stream.team_b_shares = stream.team_b_shares
-            .checked_add(amount)
-            .ok_or(ErrorCode::MathOverflow)?;
-        
-        // Increase team B price
-        stream.team_b_price = calculate_new_price(
-            stream.team_b_price,
-            stream.team_b_shares,
-            true,
-        )?;
-        
-        // Decrease team A price slightly
-        stream.team_a_price = calculate_new_price(
-            stream.team_a_price,
-            stream.team_a_shares,
-            false,
-        )?;
-    }
+        (stream.team_b_reserve, stream.team_a_reserve)
+    };
+    let price_after = calculate_price(reserve_team_after, reserve_opposite_after)?;
 
     // Update user position
     if user_position.user == Pubkey::default() {
@@ -142,26 +159,178 @@ pub fn purchase_shares_handler(
     }
 
     if team_id == 1 {
-        user_position.team_a_shares = user_position.team_a_shares
-            .checked_add(amount)
+        user_position.team_a_shares = user_position
+            .team_a_shares
+            .checked_add(shares_out)
             .ok_or(ErrorCode::MathOverflow)?;
     } else {
-        user_position.team_b_shares = user_position.team_b_shares
-            .checked_add(amount)
+        user_position.team_b_shares = user_position
+            .team_b_shares
+            .checked_add(shares_out)
             .ok_or(ErrorCode::MathOverflow)?;
     }
 
-    user_position.total_invested = user_position.total_invested
-        .checked_add(total_cost)
+    user_position.total_invested = user_position
+        .total_invested
+        .checked_add(sol_amount)
         .ok_or(ErrorCode::MathOverflow)?;
 
     emit!(SharesPurchased {
         stream_id,
         user: ctx.accounts.user.key(),
         team_id,
-        amount,
-        price: current_price,
-        total_cost,
+        sol_spent: sol_amount,
+        shares_received: shares_out,
+        price_before,
+        price_after,
+        reserve_team_before: reserve_team,
+        reserve_team_after: reserve_team_after,
+    });
+
+    Ok(())
+}
+
+pub fn sell_shares_handler(
+    ctx: Context<SellShares>,
+    stream_id: u64,
+    team_id: u8,
+    shares_amount: u64,
+) -> Result<()> {
+    let stream = &mut ctx.accounts.stream;
+    let user_position = &mut ctx.accounts.user_position;
+    let clock = Clock::get()?;
+
+    // Validate stream is active
+    require!(stream.is_active, ErrorCode::StreamNotActive);
+    require!(
+        clock.unix_timestamp < stream.end_time,
+        ErrorCode::StreamEnded
+    );
+    require!(team_id == 1 || team_id == 2, ErrorCode::InvalidTeam);
+    require!(shares_amount > 0, ErrorCode::InvalidAmount);
+    require!(
+        ctx.accounts.user.key() == user_position.user,
+        ErrorCode::Unauthorized
+    );
+
+    // Validate user has enough shares
+    if team_id == 1 {
+        require!(
+            user_position.team_a_shares >= shares_amount,
+            ErrorCode::InsufficientShares
+        );
+    } else {
+        require!(
+            user_position.team_b_shares >= shares_amount,
+            ErrorCode::InsufficientShares
+        );
+    }
+
+    // Get reserves for the team being sold
+    let (reserve_team, reserve_opposite) = if team_id == 1 {
+        (stream.team_a_reserve, stream.team_b_reserve)
+    } else {
+        (stream.team_b_reserve, stream.team_a_reserve)
+    };
+
+    // Calculate price before trade
+    let price_before = calculate_price(reserve_team, reserve_opposite)?;
+
+    // CPMM: Calculate SOL out using constant product formula
+    let sol_out = calculate_sol_out(shares_amount, reserve_team, reserve_opposite)?;
+
+    // Update stream reserves and shares
+    // Selling shares:
+    // 1. Add shares back to team reserve
+    // 2. Remove SOL from opposite reserve (pay user)
+    // 3. Decrement shares sold count
+    if team_id == 1 {
+        stream.team_a_reserve = stream
+            .team_a_reserve
+            .checked_add(shares_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stream.team_b_reserve = stream
+            .team_b_reserve
+            .checked_sub(sol_out)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stream.team_a_shares_sold = stream
+            .team_a_shares_sold
+            .checked_sub(shares_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+    } else {
+        stream.team_b_reserve = stream
+            .team_b_reserve
+            .checked_add(shares_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stream.team_a_reserve = stream
+            .team_a_reserve
+            .checked_sub(sol_out)
+            .ok_or(ErrorCode::MathOverflow)?;
+        stream.team_b_shares_sold = stream
+            .team_b_shares_sold
+            .checked_sub(shares_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+    }
+
+    stream.total_pool = stream
+        .total_pool
+        .checked_sub(sol_out)
+        .ok_or(ErrorCode::MathOverflow)?;
+
+    // Transfer SOL from vault to user
+    **ctx
+        .accounts
+        .stream_vault
+        .to_account_info()
+        .try_borrow_mut_lamports()? -= sol_out;
+    **ctx
+        .accounts
+        .user
+        .to_account_info()
+        .try_borrow_mut_lamports()? += sol_out;
+
+    // Calculate price after trade
+    let (reserve_team_after, reserve_opposite_after) = if team_id == 1 {
+        (stream.team_a_reserve, stream.team_b_reserve)
+    } else {
+        (stream.team_b_reserve, stream.team_a_reserve)
+    };
+    let price_after = calculate_price(reserve_team_after, reserve_opposite_after)?;
+
+    // Update user position
+    if team_id == 1 {
+        user_position.team_a_shares = user_position
+            .team_a_shares
+            .checked_sub(shares_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+    } else {
+        user_position.team_b_shares = user_position
+            .team_b_shares
+            .checked_sub(shares_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+    }
+
+    user_position.total_invested = user_position
+        .total_invested
+        .checked_sub(sol_out) // Reduce total invested by amount withdrawn?
+        // OR keep track of net? usually we just track raw invested,
+        // but for simple PnL we might want to subtract.
+        // Let's stick to simple "money in - money out" logic for position tracking if needed,
+        // but `total_invested` usually implies total *spent*.
+        // However, if we don't reduce it, Pgl calcs might be weird.
+        // Let's reduce it to represent "current capital at risk".
+        .ok_or(ErrorCode::MathOverflow)?;
+
+    emit!(SharesSold {
+        stream_id,
+        user: ctx.accounts.user.key(),
+        team_id,
+        shares_sold: shares_amount,
+        sol_received: sol_out,
+        price_before,
+        price_after,
+        reserve_team_before: reserve_team,
+        reserve_team_after: reserve_team_after,
     });
 
     Ok(())
@@ -180,27 +349,36 @@ pub fn end_stream_handler(
         ctx.accounts.authority.key() == stream.authority,
         ErrorCode::Unauthorized
     );
-    require!(clock.unix_timestamp >= stream.end_time, ErrorCode::StreamNotEnded);
-    require!(winning_team == 1 || winning_team == 2, ErrorCode::InvalidTeam);
+    require!(
+        clock.unix_timestamp >= stream.end_time,
+        ErrorCode::StreamNotEnded
+    );
+    require!(
+        winning_team == 1 || winning_team == 2,
+        ErrorCode::InvalidTeam
+    );
 
     stream.is_active = false;
     stream.winning_team = winning_team;
+
+    // Calculate final prices for analytics
+    let final_team_a_price = calculate_price(stream.team_a_reserve, stream.team_b_reserve)?;
+    let final_team_b_price = calculate_price(stream.team_b_reserve, stream.team_a_reserve)?;
 
     emit!(StreamEnded {
         stream_id: stream.stream_id,
         winning_team,
         total_pool: stream.total_pool,
-        team_a_shares: stream.team_a_shares,
-        team_b_shares: stream.team_b_shares,
+        team_a_shares: stream.team_a_shares_sold,
+        team_b_shares: stream.team_b_shares_sold,
+        final_team_a_price,
+        final_team_b_price,
     });
 
     Ok(())
 }
 
-pub fn claim_winnings_handler(
-    ctx: Context<ClaimWinnings>,
-    stream_id: u64,
-) -> Result<()> {
+pub fn claim_winnings_handler(ctx: Context<ClaimWinnings>, stream_id: u64) -> Result<()> {
     let stream = &ctx.accounts.stream;
     let user_position = &mut ctx.accounts.user_position;
 
@@ -222,9 +400,9 @@ pub fn claim_winnings_handler(
     require!(user_winning_shares > 0, ErrorCode::NoWinningShares);
 
     let total_winning_shares = if stream.winning_team == 1 {
-        stream.team_a_shares
+        stream.team_a_shares_sold
     } else {
-        stream.team_b_shares
+        stream.team_b_shares_sold
     };
 
     // Calculate payout: (user_shares / total_winning_shares) * total_pool
@@ -237,8 +415,16 @@ pub fn claim_winnings_handler(
     require!(payout > 0, ErrorCode::NoPayout);
 
     // Transfer winnings from vault to user
-    **ctx.accounts.stream_vault.to_account_info().try_borrow_mut_lamports()? -= payout;
-    **ctx.accounts.user.to_account_info().try_borrow_mut_lamports()? += payout;
+    **ctx
+        .accounts
+        .stream_vault
+        .to_account_info()
+        .try_borrow_mut_lamports()? -= payout;
+    **ctx
+        .accounts
+        .user
+        .to_account_info()
+        .try_borrow_mut_lamports()? += payout;
 
     user_position.has_claimed = true;
 
@@ -253,24 +439,27 @@ pub fn claim_winnings_handler(
     Ok(())
 }
 
-pub fn emergency_withdraw_handler(
-    ctx: Context<EmergencyWithdraw>,
-    _stream_id: u64,
-) -> Result<()> {
+pub fn emergency_withdraw_handler(ctx: Context<EmergencyWithdraw>, _stream_id: u64) -> Result<()> {
     let stream = &mut ctx.accounts.stream;
 
     require!(
         ctx.accounts.authority.key() == stream.authority,
         ErrorCode::Unauthorized
     );
-
-    // Stream must be inactive for emergency withdrawal
     require!(!stream.is_active, ErrorCode::StreamStillActive);
 
     let vault_balance = ctx.accounts.stream_vault.to_account_info().lamports();
-    
-    **ctx.accounts.stream_vault.to_account_info().try_borrow_mut_lamports()? = 0;
-    **ctx.accounts.authority.to_account_info().try_borrow_mut_lamports()? += vault_balance;
+
+    **ctx
+        .accounts
+        .stream_vault
+        .to_account_info()
+        .try_borrow_mut_lamports()? = 0;
+    **ctx
+        .accounts
+        .authority
+        .to_account_info()
+        .try_borrow_mut_lamports()? += vault_balance;
 
     Ok(())
 }

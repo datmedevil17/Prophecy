@@ -61,6 +61,37 @@ pub struct PurchaseShares<'info> {
 
 #[derive(Accounts)]
 #[instruction(stream_id: u64)]
+pub struct SellShares<'info> {
+    #[account(
+        mut,
+        seeds = [b"stream", stream_id.to_le_bytes().as_ref()],
+        bump = stream.bump
+    )]
+    pub stream: Account<'info, Stream>,
+
+    #[account(
+        mut,
+        seeds = [b"user_position", stream_id.to_le_bytes().as_ref(), user.key().as_ref()],
+        bump = user_position.bump
+    )]
+    pub user_position: Account<'info, UserPosition>,
+
+    #[account(
+        mut,
+        seeds = [b"stream_vault", stream_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    /// CHECK: This is a PDA used as a vault
+    pub stream_vault: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(stream_id: u64)]
 pub struct EndStream<'info> {
     #[account(
         mut,

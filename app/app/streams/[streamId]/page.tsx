@@ -6,7 +6,7 @@ import { StreamChat } from "@/components/stream-chat"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StockMarket } from "@/components/stock-market"
 import { Users, ThumbsUp, Share2, MoreHorizontal, Loader2 } from "lucide-react"
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { getProvider, getStream } from "@/services/service"
 import { BN } from "@coral-xyz/anchor"
@@ -32,48 +32,47 @@ export default function StreamWatchPage() {
     [publicKey, signTransaction, sendTransaction]
   )
 
+  const fetchStreamData = useCallback(async () => {
+    if (!program || !streamIdStr) return;
+
+    try {
+      const streamIdBN = new BN(streamIdStr);
+      const account = await getStream(program, streamIdBN);
+      
+      const videoId = getYoutubeId(account.streamLink);
+      
+      // Conversions
+      // Assuming LAMPORTS_PER_SOL is 1e9
+      // Initial price is not stored in account, defaulting to 0.1 SOL
+      const initialPrice = 0.1;
+      const teamAPrice = account.teamAPrice.toNumber() / 1000000000;
+      const teamBPrice = account.teamBPrice.toNumber() / 1000000000;
+
+      setStream({
+          title: `${account.teamAName} vs ${account.teamBName}`,
+          streamer: account.authority.toBase58(),
+          youtubeId: videoId,
+          viewers: 0,
+          
+          // Market Data
+          teamAName: account.teamAName,
+          teamBName: account.teamBName,
+          initialPrice: initialPrice,
+          teamAPrice: teamAPrice,
+          teamBPrice: teamBPrice,
+      });
+    } catch (error) {
+      console.error("Error fetching stream:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [program, streamIdStr]);
+
   useEffect(() => {
-    const fetchStreamData = async () => {
-      if (!program || !streamIdStr) return;
-
-      setIsLoading(true);
-      try {
-        const streamIdBN = new BN(streamIdStr);
-        const account = await getStream(program, streamIdBN);
-        
-        const videoId = getYoutubeId(account.streamLink);
-        
-        // Conversions
-        // Assuming LAMPORTS_PER_SOL is 1e9
-        // Initial price is not stored in account, defaulting to 0.1 SOL
-        const initialPrice = 0.1;
-        const teamAPrice = account.teamAPrice.toNumber() / 1000000000;
-        const teamBPrice = account.teamBPrice.toNumber() / 1000000000;
-
-        setStream({
-            title: `${account.teamAName} vs ${account.teamBName}`,
-            streamer: account.authority.toBase58(),
-            youtubeId: videoId,
-            viewers: 0,
-            
-            // Market Data
-            teamAName: account.teamAName,
-            teamBName: account.teamBName,
-            initialPrice: initialPrice,
-            teamAPrice: teamAPrice,
-            teamBPrice: teamBPrice,
-        });
-      } catch (error) {
-        console.error("Error fetching stream:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     if (program) {
         fetchStreamData();
     }
-  }, [program, streamIdStr]);
+  }, [program, streamIdStr, fetchStreamData]);
 
 
   if (isLoading) {
@@ -158,7 +157,11 @@ export default function StreamWatchPage() {
 
         {/* Chat Sidebar */}
         <div className="w-[350px] hidden lg:flex flex-col border-l border-zinc-200 h-full bg-white relative z-10">
-            <StreamChat streamId={streamIdStr} program={program} />
+            <StreamChat 
+              streamId={streamIdStr} 
+              program={program} 
+              onTradeSuccess={fetchStreamData}
+            />
         </div>
       </div>
     </div>

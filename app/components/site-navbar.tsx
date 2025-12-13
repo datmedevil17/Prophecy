@@ -14,7 +14,7 @@ export function SiteNavbar() {
   const navItems = [
     { name: "Home", link: "/" },
     { name: "Streams", link: "/streams" },
-    { name: "Dashboard", link: "/dashboard" },
+    { name: "Create", link: "/create" },
     { name: "History", link: "/history" },
     { name: "Profile", link: "/profile" },
   ];

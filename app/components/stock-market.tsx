@@ -130,7 +130,7 @@ export function StockMarket({ initialPrice = 150, currentPrice = 150, teamName =
 
   }, [initialPrice, currentPrice]);
 
-  const formatPrice = (price: number) => `$${price.toFixed(2)}`;
+  const formatPrice = (price: number) => `$${price.toFixed(4)}`;
 
   return (
     <Card className="border-2 border-zinc-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] h-full bg-white flex flex-col rounded-none">
@@ -172,7 +172,7 @@ export function StockMarket({ initialPrice = 150, currentPrice = 150, teamName =
                 tickLine={false}
                 axisLine={false}
                 domain={['auto', 'auto']}
-                tickFormatter={(val) => val.toFixed(2)}
+                tickFormatter={(val) => val.toFixed(4)}
               />
               <Tooltip 
                 cursor={{ fill: 'rgba(0,0,0,0.05)' }}
@@ -184,14 +184,14 @@ export function StockMarket({ initialPrice = 150, currentPrice = 150, teamName =
                                 <div className="font-bold mb-2 text-zinc-900">Price Action</div>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                                     <span className="text-zinc-500">Open:</span>
-                                    <span className="text-right font-bold">{d.open.toFixed(2)}</span>
+                                    <span className="text-right font-bold">{d.open.toFixed(4)}</span>
                                     <span className="text-zinc-500">High:</span>
-                                    <span className="text-right font-bold">{d.high.toFixed(2)}</span>
+                                    <span className="text-right font-bold">{d.high.toFixed(4)}</span>
                                     <span className="text-zinc-500">Low:</span>
-                                    <span className="text-right font-bold">{d.low.toFixed(2)}</span>
+                                    <span className="text-right font-bold">{d.low.toFixed(4)}</span>
                                     <span className="text-zinc-500">Close:</span>
                                     <span className={`text-right font-bold ${d.close > d.open ? 'text-emerald-600' : 'text-red-600'}`}>
-                                        {d.close.toFixed(2)}
+                                        {d.close.toFixed(4)}
                                     </span>
                                 </div>
                             </div>

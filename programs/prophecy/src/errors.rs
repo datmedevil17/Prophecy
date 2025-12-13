@@ -32,4 +32,6 @@ pub enum ErrorCode {
     NoWinningShares,
     #[msg("No payout available")]
     NoPayout,
+    #[msg("Insufficient shares to sell")]
+    InsufficientShares,
 }

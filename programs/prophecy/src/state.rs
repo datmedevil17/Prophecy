@@ -1,3 +1,4 @@
+
 use anchor_lang::prelude::*;
 
 #[account]
@@ -9,11 +10,14 @@ pub struct Stream {
     pub team_a_name: String,
     #[max_len(32)]
     pub team_b_name: String,
-    pub team_a_shares: u64,
-    pub team_b_shares: u64,
-    pub team_a_price: u64,
-    pub team_b_price: u64,
-    pub total_pool: u64,
+    
+    pub team_a_reserve: u64,  // Virtual liquidity for Team A
+    pub team_b_reserve: u64,  // Virtual liquidity for Team B
+    
+    pub team_a_shares_sold: u64,
+    pub team_b_shares_sold: u64,
+    
+    pub total_pool: u64,        
     pub start_time: i64,
     pub end_time: i64,
     pub is_active: bool,

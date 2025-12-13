@@ -36,8 +36,8 @@ const formSchema = z.object({
   team_b_name: z.string().min(2, {
     message: "Team B name must be at least 2 characters.",
   }),
-  initial_price: z.coerce.number().min(0, {
-    message: "Price cannot be negative.",
+  initial_price: z.coerce.number().min(0.01, {
+    message: "Price must be at least 0.01 SOL.",
   }),
   stream_duration: z.coerce.number().min(1, {
     message: "Duration must be at least 1 minute.",
