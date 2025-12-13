@@ -79,7 +79,7 @@ pub struct SellShares<'info> {
     #[account(
         mut,
         seeds = [b"stream_vault", stream_id.to_le_bytes().as_ref()],
-        bump
+        bump  // Anchor will capture this bump automatically
     )]
     /// CHECK: This is a PDA used as a vault
     pub stream_vault: AccountInfo<'info>,
@@ -89,7 +89,6 @@ pub struct SellShares<'info> {
 
     pub system_program: Program<'info, System>,
 }
-
 #[derive(Accounts)]
 #[instruction(stream_id: u64)]
 pub struct EndStream<'info> {
@@ -102,7 +101,6 @@ pub struct EndStream<'info> {
 
     pub authority: Signer<'info>,
 }
-
 #[derive(Accounts)]
 #[instruction(stream_id: u64)]
 pub struct ClaimWinnings<'info> {

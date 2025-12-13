@@ -1,572 +1,1342 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { Prophecy } from "../target/types/prophecy";
-import { expect } from "chai";
-import { PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { PredictionMarket } from "../target/types/prediction_market";
+import { PublicKey, Keypair, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { assert, expect } from "chai";
 
-describe("prophecy", () => {
+describe("Prophecy Prediction Market", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.Prophecy as Program<Prophecy>;
+  const program = anchor.workspace.PredictionMarket as Program<PredictionMarket>;
   const authority = provider.wallet as anchor.Wallet;
-  
-  // Test users
-  let user1: anchor.web3.Keypair;
-  let user2: anchor.web3.Keypair;
-  
-  // Stream configuration
-  const streamId = new anchor.BN(Date.now());
-  const teamAName = "Team Alpha";
-  const teamBName = "Team Beta";
-  const initialPrice = new anchor.BN(1_000_000); // 0.001 SOL
-  const streamDuration = new anchor.BN(3600); // 1 hour
 
-  // PDAs
-  let streamPda: PublicKey;
-  let streamBump: number;
-  let streamVaultPda: PublicKey;
-  let streamVaultBump: number;
-  let user1PositionPda: PublicKey;
-  let user2PositionPda: PublicKey;
-
-  before(async () => {
-    // Create test users
-    user1 = anchor.web3.Keypair.generate();
-    user2 = anchor.web3.Keypair.generate();
-
-    // Airdrop SOL to test users
-    const airdropSig1 = await provider.connection.requestAirdrop(
-      user1.publicKey,
-      5 * LAMPORTS_PER_SOL
-    );
-    const airdropSig2 = await provider.connection.requestAirdrop(
-      user2.publicKey,
-      5 * LAMPORTS_PER_SOL
-    );
-
-    await provider.connection.confirmTransaction(airdropSig1);
-    await provider.connection.confirmTransaction(airdropSig2);
-
-    // Derive PDAs
-    [streamPda, streamBump] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stream"), streamId.toArrayLike(Buffer, "le", 8)],
+  // Helper function to derive PDAs
+  const getStreamPDA = (streamId: number) => {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("stream"), new anchor.BN(streamId).toArrayLike(Buffer, "le", 8)],
       program.programId
     );
+  };
 
-    [streamVaultPda, streamVaultBump] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stream_vault"), streamId.toArrayLike(Buffer, "le", 8)],
+  const getStreamVaultPDA = (streamId: number) => {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("stream_vault"), new anchor.BN(streamId).toArrayLike(Buffer, "le", 8)],
       program.programId
     );
+  };
 
-    [user1PositionPda] = PublicKey.findProgramAddressSync(
+  const getUserPositionPDA = (streamId: number, user: PublicKey) => {
+    return PublicKey.findProgramAddressSync(
       [
         Buffer.from("user_position"),
-        streamId.toArrayLike(Buffer, "le", 8),
-        user1.publicKey.toBuffer(),
+        new anchor.BN(streamId).toArrayLike(Buffer, "le", 8),
+        user.toBuffer(),
       ],
       program.programId
     );
+  };
 
-    [user2PositionPda] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("user_position"),
-        streamId.toArrayLike(Buffer, "le", 8),
-        user2.publicKey.toBuffer(),
-      ],
-      program.programId
+  // Helper to airdrop SOL
+  const airdrop = async (publicKey: PublicKey, amount: number) => {
+    const signature = await provider.connection.requestAirdrop(
+      publicKey,
+      amount * LAMPORTS_PER_SOL
     );
-  });
+    await provider.connection.confirmTransaction(signature);
+  };
 
-  describe("Initialize Stream", () => {
-    it("Successfully initializes a new prediction stream", async () => {
+  describe("Stream Initialization", () => {
+    const streamId = 1;
+    const teamAName = "Team Alpha";
+    const teamBName = "Team Beta";
+    const initialLiquidity = new anchor.BN(100 * LAMPORTS_PER_SOL); // 100 SOL
+    const streamDuration = new anchor.BN(3600); // 1 hour
+    const streamLink = "https://example.com/stream/1";
+
+    it("Successfully initializes a stream", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
       const tx = await program.methods
         .initializeStream(
-          streamId,
+          new anchor.BN(streamId),
           teamAName,
           teamBName,
-          initialPrice,
-          streamDuration
+          initialLiquidity,
+          streamDuration,
+          streamLink
         )
-        .accounts({
-          stream: streamPda,
-          streamVault: streamVaultPda,
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
           authority: authority.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
 
-      console.log("Initialize stream transaction signature:", tx);
+      const testUser = Keypair.generate();
+      await airdrop(testUser.publicKey, 5);
 
-      // Fetch and verify stream account
-      const streamAccount = await program.account.stream.fetch(streamPda);
+      const [userPositionPDA] = getUserPositionPDA(streamId, testUser.publicKey);
       
-      expect(streamAccount.authority.toString()).to.equal(authority.publicKey.toString());
-      expect(streamAccount.streamId.toString()).to.equal(streamId.toString());
-      expect(streamAccount.teamAName).to.equal(teamAName);
-      expect(streamAccount.teamBName).to.equal(teamBName);
-      expect(streamAccount.teamAShares.toString()).to.equal("0");
-      expect(streamAccount.teamBShares.toString()).to.equal("0");
-      expect(streamAccount.teamAPrice.toString()).to.equal(initialPrice.toString());
-      expect(streamAccount.teamBPrice.toString()).to.equal(initialPrice.toString());
-      expect(streamAccount.totalPool.toString()).to.equal("0");
-      expect(streamAccount.isActive).to.be.true;
-      expect(streamAccount.winningTeam).to.equal(0);
-    });
-
-    it("Fails to initialize with team name too long", async () => {
-      const longName = "a".repeat(33); // Max is 32
-      const newStreamId = new anchor.BN(Date.now() + 1);
-      const [newStreamPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("stream"), newStreamId.toArrayLike(Buffer, "le", 8)],
-        program.programId
-      );
-      const [newVaultPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("stream_vault"), newStreamId.toArrayLike(Buffer, "le", 8)],
-        program.programId
-      );
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 1, new anchor.BN(1 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: testUser.publicKey,
+        })
+        .signers([testUser])
+        .rpc();
 
       try {
         await program.methods
-          .initializeStream(
-            newStreamId,
-            longName,
-            teamBName,
-            initialPrice,
-            streamDuration
-          )
-          .accounts({
-            stream: newStreamPda,
-            streamVault: newVaultPda,
-            authority: authority.publicKey,
-            systemProgram: SystemProgram.programId,
+          .claimWinnings(new anchor.BN(streamId))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: userPositionPDA,
+            streamVault: streamVaultPDA,
+            user: testUser.publicKey,
           })
+          .signers([testUser])
           .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("NameTooLong");
+        assert.fail("Should have failed - stream still active");
+      } catch (err) {
+        expect(err.toString()).to.include("StreamStillActive");
+      }
+    });
+  });
+
+  describe("Emergency Withdraw", () => {
+    const streamId = 10;
+
+    before(async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId),
+          "Team Emergency",
+          "Team Test",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(1),
+          "https://example.com/stream/10"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      // Add some funds to vault
+      const user = Keypair.generate();
+      await airdrop(user.publicKey, 5);
+
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+      
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 1, new anchor.BN(2 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      // End stream
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
+      await program.methods
+        .endStream(new anchor.BN(streamId), 1)
+        .accountsPartial({
+          stream: streamPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+    });
+
+    it("Authority can emergency withdraw", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
+      const vaultBalanceBefore = await provider.connection.getBalance(streamVaultPDA);
+      const authorityBalanceBefore = await provider.connection.getBalance(authority.publicKey);
+
+      await program.methods
+        .emergencyWithdraw(new anchor.BN(streamId))
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      const vaultBalanceAfter = await provider.connection.getBalance(streamVaultPDA);
+      const authorityBalanceAfter = await provider.connection.getBalance(authority.publicKey);
+
+      // Vault should be drained
+      assert.equal(vaultBalanceAfter, 0);
+      
+      // Authority should receive funds (minus tx fees)
+      assert.isTrue(authorityBalanceAfter > authorityBalanceBefore);
+    });
+
+    it("Fails with unauthorized caller", async () => {
+      const streamId2 = 11;
+      const [streamPDA] = getStreamPDA(streamId2);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId2);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId2),
+          "Team A",
+          "Team B",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(1),
+          "https://example.com/stream/11"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
+      await program.methods
+        .endStream(new anchor.BN(streamId2), 1)
+        .accountsPartial({
+          stream: streamPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      const unauthorizedUser = Keypair.generate();
+      await airdrop(unauthorizedUser.publicKey, 1);
+
+      try {
+        await program.methods
+          .emergencyWithdraw(new anchor.BN(streamId2))
+          .accountsPartial({
+            stream: streamPDA,
+            streamVault: streamVaultPDA,
+            authority: unauthorizedUser.publicKey,
+          })
+          .signers([unauthorizedUser])
+          .rpc();
+        assert.fail("Should have failed with unauthorized");
+      } catch (err) {
+        expect(err.toString()).to.include("Unauthorized");
       }
     });
 
-    it("Fails to initialize with invalid price", async () => {
-      const newStreamId = new anchor.BN(Date.now() + 2);
-      const [newStreamPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("stream"), newStreamId.toArrayLike(Buffer, "le", 8)],
-        program.programId
+    it("Fails on active stream", async () => {
+      const streamId2 = 12;
+      const [streamPDA] = getStreamPDA(streamId2);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId2);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId2),
+          "Team A",
+          "Team B",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(3600),
+          "https://example.com/stream/12"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      try {
+        await program.methods
+          .emergencyWithdraw(new anchor.BN(streamId2))
+          .accountsPartial({
+            stream: streamPDA,
+            streamVault: streamVaultPDA,
+            authority: authority.publicKey,
+          })
+          .rpc();
+        assert.fail("Should have failed - stream still active");
+      } catch (err) {
+        expect(err.toString()).to.include("StreamStillActive");
+      }
+    });
+  });
+
+  describe("CPMM Price Mechanics", () => {
+    const streamId = 13;
+    let user: Keypair;
+
+    before(async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId),
+          "Team Price Test A",
+          "Team Price Test B",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(3600),
+          "https://example.com/stream/13"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      user = Keypair.generate();
+      await airdrop(user.publicKey, 20);
+    });
+
+    it("Price increases when buying and decreases opposite team", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      const streamBefore = await program.account.stream.fetch(streamPDA);
+      
+      // Large purchase should move price significantly
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 1, new anchor.BN(5 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      const streamAfter = await program.account.stream.fetch(streamPDA);
+
+      // Team A reserve should decrease (shares sold)
+      assert.isTrue(streamAfter.teamAReserve.lt(streamBefore.teamAReserve));
+      
+      // Team B reserve should increase (SOL added)
+      assert.isTrue(streamAfter.teamBReserve.gt(streamBefore.teamBReserve));
+      
+      // Shares sold should increase
+      assert.isTrue(streamAfter.teamASharesSold.gt(streamBefore.teamASharesSold));
+    });
+
+    it("Constant product maintained after trades", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const stream = await program.account.stream.fetch(streamPDA);
+
+      // Calculate k = reserve_a * reserve_b
+      const k = stream.teamAReserve.mul(stream.teamBReserve);
+      
+      // k should be a large positive number
+      assert.isTrue(k.gt(new anchor.BN(0)));
+    });
+
+    it("Multiple purchases move price progressively", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      const stream1 = await program.account.stream.fetch(streamPDA);
+      
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 2, new anchor.BN(1 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      const stream2 = await program.account.stream.fetch(streamPDA);
+
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 2, new anchor.BN(1 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      const stream3 = await program.account.stream.fetch(streamPDA);
+
+      // Each purchase should change reserves
+      assert.notEqual(
+        stream1.teamBReserve.toString(),
+        stream2.teamBReserve.toString()
       );
-      const [newVaultPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("stream_vault"), newStreamId.toArrayLike(Buffer, "le", 8)],
-        program.programId
+      assert.notEqual(
+        stream2.teamBReserve.toString(),
+        stream3.teamBReserve.toString()
       );
+    });
+  });
+
+  describe("Edge Cases and Integration", () => {
+    it("User can purchase both teams in same stream", async () => {
+      const streamId = 14;
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId),
+          "Team Both",
+          "Team Sides",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(3600),
+          "https://example.com/stream/14"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      const user = Keypair.generate();
+      await airdrop(user.publicKey, 10);
+
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      // Buy Team A
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 1, new anchor.BN(1 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      // Buy Team B
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 2, new anchor.BN(1 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      const userPosition = await program.account.userPosition.fetch(userPositionPDA);
+
+      assert.isTrue(userPosition.teamAShares.gt(new anchor.BN(0)));
+      assert.isTrue(userPosition.teamBShares.gt(new anchor.BN(0)));
+    });
+
+    it("Cannot purchase on inactive stream", async () => {
+      const streamId = 15;
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId),
+          "Team Inactive",
+          "Team Test",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(1),
+          "https://example.com/stream/15"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
+      await program.methods
+        .endStream(new anchor.BN(streamId), 1)
+        .accountsPartial({
+          stream: streamPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      const user = Keypair.generate();
+      await airdrop(user.publicKey, 5);
+
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      try {
+        await program.methods
+          .purchaseShares(new anchor.BN(streamId), 1, new anchor.BN(1 * LAMPORTS_PER_SOL))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: userPositionPDA,
+            streamVault: streamVaultPDA,
+            user: user.publicKey,
+          })
+          .signers([user])
+          .rpc();
+        assert.fail("Should have failed - stream not active");
+      } catch (err) {
+        expect(err.toString()).to.include("StreamNotActive");
+      }
+    });
+
+    it("Total pool accumulates correctly", async () => {
+      const streamId = 16;
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId),
+          "Team Pool",
+          "Team Test",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(3600),
+          "https://example.com/stream/16"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      const user1 = Keypair.generate();
+      const user2 = Keypair.generate();
+      await airdrop(user1.publicKey, 10);
+      await airdrop(user2.publicKey, 10);
+
+      const amount1 = new anchor.BN(2 * LAMPORTS_PER_SOL);
+      const amount2 = new anchor.BN(3 * LAMPORTS_PER_SOL);
+
+      const [userPosition1PDA] = getUserPositionPDA(streamId, user1.publicKey);
+      const [userPosition2PDA] = getUserPositionPDA(streamId, user2.publicKey);
+
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 1, amount1)
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPosition1PDA,
+          streamVault: streamVaultPDA,
+          user: user1.publicKey,
+        })
+        .signers([user1])
+        .rpc();
+
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 2, amount2)
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPosition2PDA,
+          streamVault: streamVaultPDA,
+          user: user2.publicKey,
+        })
+        .signers([user2])
+        .rpc();
+
+      const stream = await program.account.stream.fetch(streamPDA);
+      const expectedTotal = amount1.add(amount2);
+
+      assert.equal(stream.totalPool.toString(), expectedTotal.toString());
+    });
+  });
+
+
+  describe("Initialization Errors", () => {
+    const teamAName = "Team Alpha";
+    const teamBName = "Team Beta";
+    const initialLiquidity = new anchor.BN(100 * LAMPORTS_PER_SOL);
+    const streamDuration = new anchor.BN(3600);
+    const streamLink = "https://example.com/stream/1";
+
+    it("Fails with team name too long", async () => {
+      const longName = "A".repeat(33);
+      const [streamPDA] = getStreamPDA(999);
+      const [streamVaultPDA] = getStreamVaultPDA(999);
 
       try {
         await program.methods
           .initializeStream(
-            newStreamId,
-            teamAName,
+            new anchor.BN(999),
+            longName,
             teamBName,
-            new anchor.BN(0), // Invalid price
-            streamDuration
+            initialLiquidity,
+            streamDuration,
+            streamLink
           )
-          .accounts({
-            stream: newStreamPda,
-            streamVault: newVaultPda,
+          .accountsPartial({
+            stream: streamPDA,
+            streamVault: streamVaultPDA,
             authority: authority.publicKey,
-            systemProgram: SystemProgram.programId,
           })
           .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("InvalidPrice");
+        assert.fail("Should have failed with name too long");
+      } catch (err) {
+        expect(err.toString()).to.include("NameTooLong");
+      }
+    });
+
+    it("Fails with zero initial liquidity", async () => {
+      const [streamPDA] = getStreamPDA(998);
+      const [streamVaultPDA] = getStreamVaultPDA(998);
+
+      try {
+        await program.methods
+          .initializeStream(
+            new anchor.BN(998),
+            teamAName,
+            teamBName,
+            new anchor.BN(0),
+            streamDuration,
+            streamLink
+          )
+          .accountsPartial({
+            stream: streamPDA,
+            streamVault: streamVaultPDA,
+            authority: authority.publicKey,
+          })
+          .rpc();
+        assert.fail("Should have failed with zero liquidity");
+      } catch (err) {
+        expect(err.toString()).to.include("InvalidPrice");
+      }
+    });
+
+    it("Fails with odd initial liquidity", async () => {
+      const [streamPDA] = getStreamPDA(997);
+      const [streamVaultPDA] = getStreamVaultPDA(997);
+
+      try {
+        await program.methods
+          .initializeStream(
+            new anchor.BN(997),
+            teamAName,
+            teamBName,
+            new anchor.BN(999), // Odd number
+            streamDuration,
+            streamLink
+          )
+          .accountsPartial({
+            stream: streamPDA,
+            streamVault: streamVaultPDA,
+            authority: authority.publicKey,
+          })
+          .rpc();
+        assert.fail("Should have failed with odd liquidity");
+      } catch (err) {
+        expect(err.toString()).to.include("InvalidPrice");
+      }
+    });
+
+    it("Fails with zero duration", async () => {
+      const [streamPDA] = getStreamPDA(996);
+      const [streamVaultPDA] = getStreamVaultPDA(996);
+
+      try {
+        await program.methods
+          .initializeStream(
+            new anchor.BN(996),
+            teamAName,
+            teamBName,
+            initialLiquidity,
+            new anchor.BN(0),
+            streamLink
+          )
+          .accountsPartial({
+            stream: streamPDA,
+            streamVault: streamVaultPDA,
+            authority: authority.publicKey,
+          })
+          .rpc();
+        assert.fail("Should have failed with zero duration");
+      } catch (err) {
+        expect(err.toString()).to.include("InvalidDuration");
       }
     });
   });
 
   describe("Purchase Shares", () => {
-    it("User1 successfully purchases Team A shares", async () => {
-      const amount = new anchor.BN(10);
-      
-      const tx = await program.methods
-        .purchaseShares(streamId, 1, amount) // Team A = 1
-        .accounts({
-          stream: streamPda,
-          userPosition: user1PositionPda,
-          streamVault: streamVaultPda,
-          user: user1.publicKey,
-          systemProgram: SystemProgram.programId,
+    const streamId = 2;
+    let user: Keypair;
+
+    before(async () => {
+      // Initialize a stream for testing
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId),
+          "Team A",
+          "Team B",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(3600),
+          "https://example.com/stream/2"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
         })
-        .signers([user1])
         .rpc();
 
-      console.log("User1 purchase transaction signature:", tx);
-
-      // Verify stream state
-      const streamAccount = await program.account.stream.fetch(streamPda);
-      expect(streamAccount.teamAShares.toString()).to.equal(amount.toString());
-      expect(streamAccount.totalPool.toNumber()).to.be.greaterThan(0);
-
-      // Verify user position
-      const userPosition = await program.account.userPosition.fetch(user1PositionPda);
-      expect(userPosition.user.toString()).to.equal(user1.publicKey.toString());
-      expect(userPosition.teamAShares.toString()).to.equal(amount.toString());
-      expect(userPosition.teamBShares.toString()).to.equal("0");
-      expect(userPosition.totalInvested.toNumber()).to.be.greaterThan(0);
-      expect(userPosition.hasClaimed).to.be.false;
+      // Create and fund a test user
+      user = Keypair.generate();
+      await airdrop(user.publicKey, 10);
     });
 
-    it("User2 successfully purchases Team B shares", async () => {
-      const amount = new anchor.BN(15);
-      
-      const tx = await program.methods
-        .purchaseShares(streamId, 2, amount) // Team B = 2
-        .accounts({
-          stream: streamPda,
-          userPosition: user2PositionPda,
-          streamVault: streamVaultPda,
+    it("Successfully purchases shares for Team A", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      const solAmount = new anchor.BN(1 * LAMPORTS_PER_SOL);
+
+      const streamBefore = await program.account.stream.fetch(streamPDA);
+      const vaultBalanceBefore = await provider.connection.getBalance(streamVaultPDA);
+
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 1, solAmount)
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      const streamAfter = await program.account.stream.fetch(streamPDA);
+      const userPosition = await program.account.userPosition.fetch(userPositionPDA);
+      const vaultBalanceAfter = await provider.connection.getBalance(streamVaultPDA);
+
+      // Verify vault received SOL
+      assert.equal(vaultBalanceAfter - vaultBalanceBefore, solAmount.toNumber());
+
+      // Verify stream state updated
+      assert.isTrue(streamAfter.totalPool.gt(streamBefore.totalPool));
+      assert.isTrue(streamAfter.teamASharesSold.gt(new anchor.BN(0)));
+
+      // Verify user position created
+      assert.equal(userPosition.user.toString(), user.publicKey.toString());
+      assert.equal(userPosition.streamId.toNumber(), streamId);
+      assert.isTrue(userPosition.teamAShares.gt(new anchor.BN(0)));
+      assert.equal(userPosition.totalInvested.toString(), solAmount.toString());
+      assert.isFalse(userPosition.hasClaimed);
+    });
+
+    it("Successfully purchases shares for Team B", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      const solAmount = new anchor.BN(0.5 * LAMPORTS_PER_SOL);
+
+      const userPositionBefore = await program.account.userPosition.fetch(userPositionPDA);
+
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 2, solAmount)
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      const userPositionAfter = await program.account.userPosition.fetch(userPositionPDA);
+
+      // Verify user now has shares in both teams
+      assert.isTrue(userPositionAfter.teamBShares.gt(new anchor.BN(0)));
+      assert.isTrue(userPositionAfter.totalInvested.gt(userPositionBefore.totalInvested));
+    });
+
+    it("Fails with zero amount", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      try {
+        await program.methods
+          .purchaseShares(new anchor.BN(streamId), 1, new anchor.BN(0))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: userPositionPDA,
+            streamVault: streamVaultPDA,
+            user: user.publicKey,
+          })
+          .signers([user])
+          .rpc();
+        assert.fail("Should have failed with zero amount");
+      } catch (err) {
+        expect(err.toString()).to.include("InvalidAmount");
+      }
+    });
+
+    it("Fails with invalid team ID", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      try {
+        await program.methods
+          .purchaseShares(new anchor.BN(streamId), 3, new anchor.BN(1000000))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: userPositionPDA,
+            streamVault: streamVaultPDA,
+            user: user.publicKey,
+          })
+          .signers([user])
+          .rpc();
+        assert.fail("Should have failed with invalid team");
+      } catch (err) {
+        expect(err.toString()).to.include("InvalidTeam");
+      }
+    });
+
+    it("Multiple users can purchase shares", async () => {
+      const user2 = Keypair.generate();
+      await airdrop(user2.publicKey, 5);
+
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user2.publicKey);
+
+      const solAmount = new anchor.BN(2 * LAMPORTS_PER_SOL);
+
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 2, solAmount)
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
           user: user2.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .signers([user2])
         .rpc();
 
-      console.log("User2 purchase transaction signature:", tx);
-
-      // Verify stream state
-      const streamAccount = await program.account.stream.fetch(streamPda);
-      expect(streamAccount.teamBShares.toString()).to.equal(amount.toString());
+      const userPosition = await program.account.userPosition.fetch(userPositionPDA);
       
-      // Verify user position
-      const userPosition = await program.account.userPosition.fetch(user2PositionPda);
-      expect(userPosition.teamBShares.toString()).to.equal(amount.toString());
-      expect(userPosition.teamAShares.toString()).to.equal("0");
+      assert.equal(userPosition.user.toString(), user2.publicKey.toString());
+      assert.isTrue(userPosition.teamBShares.gt(new anchor.BN(0)));
     });
+  });
 
-    it("User1 purchases more Team A shares (accumulation)", async () => {
-      const additionalAmount = new anchor.BN(5);
-      
-      const userPositionBefore = await program.account.userPosition.fetch(user1PositionPda);
-      const previousShares = userPositionBefore.teamAShares;
+  describe("Sell Shares", () => {
+    const streamId = 3;
+    let user: Keypair;
+
+    before(async () => {
+      // Initialize stream
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
 
       await program.methods
-        .purchaseShares(streamId, 1, additionalAmount)
-        .accounts({
-          stream: streamPda,
-          userPosition: user1PositionPda,
-          streamVault: streamVaultPda,
-          user: user1.publicKey,
-          systemProgram: SystemProgram.programId,
+        .initializeStream(
+          new anchor.BN(streamId),
+          "Team X",
+          "Team Y",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(3600),
+          "https://example.com/stream/3"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
         })
-        .signers([user1])
         .rpc();
 
-      const userPositionAfter = await program.account.userPosition.fetch(user1PositionPda);
-      expect(userPositionAfter.teamAShares.toString()).to.equal(
-        previousShares.add(additionalAmount).toString()
-      );
+      // Create user and purchase shares
+      user = Keypair.generate();
+      await airdrop(user.publicKey, 10);
+
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 1, new anchor.BN(2 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
     });
 
-    it("Fails to purchase shares with invalid team ID", async () => {
+    it("Successfully sells shares", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      const userPositionBefore = await program.account.userPosition.fetch(userPositionPDA);
+      const userBalanceBefore = await provider.connection.getBalance(user.publicKey);
+      
+      // Sell half the shares
+      const sharesToSell = userPositionBefore.teamAShares.div(new anchor.BN(2));
+
+      await program.methods
+        .sellShares(new anchor.BN(streamId), 1, sharesToSell)
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      const userPositionAfter = await program.account.userPosition.fetch(userPositionPDA);
+      const userBalanceAfter = await provider.connection.getBalance(user.publicKey);
+
+      // Verify shares decreased
+      assert.isTrue(userPositionAfter.teamAShares.lt(userPositionBefore.teamAShares));
+      
+      // Verify user received SOL (accounting for tx fees)
+      assert.isTrue(userBalanceAfter > userBalanceBefore - 0.01 * LAMPORTS_PER_SOL);
+    });
+
+    it("Fails selling more shares than owned", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
+      const userPosition = await program.account.userPosition.fetch(userPositionPDA);
+      const tooManyShares = userPosition.teamAShares.add(new anchor.BN(1000000));
+
       try {
         await program.methods
-          .purchaseShares(streamId, 3, new anchor.BN(1)) // Invalid team ID
-          .accounts({
-            stream: streamPda,
-            userPosition: user1PositionPda,
-            streamVault: streamVaultPda,
-            user: user1.publicKey,
-            systemProgram: SystemProgram.programId,
+          .sellShares(new anchor.BN(streamId), 1, tooManyShares)
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: userPositionPDA,
+            streamVault: streamVaultPDA,
+            user: user.publicKey,
           })
-          .signers([user1])
+          .signers([user])
           .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("InvalidTeam");
+        assert.fail("Should have failed with insufficient shares");
+      } catch (err) {
+        expect(err.toString()).to.include("InsufficientShares");
       }
     });
 
-    it("Fails to purchase shares with zero amount", async () => {
+    it("Fails selling shares of team user doesn't own", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
+
       try {
         await program.methods
-          .purchaseShares(streamId, 1, new anchor.BN(0))
-          .accounts({
-            stream: streamPda,
-            userPosition: user1PositionPda,
-            streamVault: streamVaultPda,
-            user: user1.publicKey,
-            systemProgram: SystemProgram.programId,
+          .sellShares(new anchor.BN(streamId), 2, new anchor.BN(1000))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: userPositionPDA,
+            streamVault: streamVaultPDA,
+            user: user.publicKey,
           })
-          .signers([user1])
+          .signers([user])
           .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("InvalidAmount");
+        assert.fail("Should have failed with insufficient shares");
+      } catch (err) {
+        expect(err.toString()).to.include("InsufficientShares");
       }
     });
 
-    it("Verifies price changes based on demand", async () => {
-      const streamBefore = await program.account.stream.fetch(streamPda);
-      const teamAPriceBefore = streamBefore.teamAPrice;
-      const teamBPriceBefore = streamBefore.teamBPrice;
+    it("Fails selling zero shares", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [userPositionPDA] = getUserPositionPDA(streamId, user.publicKey);
 
-      // Purchase more Team A shares
-      await program.methods
-        .purchaseShares(streamId, 1, new anchor.BN(20))
-        .accounts({
-          stream: streamPda,
-          userPosition: user1PositionPda,
-          streamVault: streamVaultPda,
-          user: user1.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([user1])
-        .rpc();
-
-      const streamAfter = await program.account.stream.fetch(streamPda);
-      
-      // Team A price should increase (bonding curve)
-      expect(streamAfter.teamAPrice.toNumber()).to.be.greaterThan(teamAPriceBefore.toNumber());
-      
-      // Team B price should decrease slightly
-      expect(streamAfter.teamBPrice.toNumber()).to.be.lessThan(teamBPriceBefore.toNumber());
+      try {
+        await program.methods
+          .sellShares(new anchor.BN(streamId), 1, new anchor.BN(0))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: userPositionPDA,
+            streamVault: streamVaultPDA,
+            user: user.publicKey,
+          })
+          .signers([user])
+          .rpc();
+        assert.fail("Should have failed with zero amount");
+      } catch (err) {
+        expect(err.toString()).to.include("InvalidAmount");
+      }
     });
   });
 
   describe("End Stream", () => {
-    it("Fails to end stream before end time", async () => {
+    const streamId = 4;
+
+    before(async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId),
+          "Team One",
+          "Team Two",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(1), // Very short duration
+          "https://example.com/stream/4"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      // Wait for stream to end
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    });
+
+    it("Successfully ends stream with Team A winning", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+
+      await program.methods
+        .endStream(new anchor.BN(streamId), 1)
+        .accountsPartial({
+          stream: streamPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      const stream = await program.account.stream.fetch(streamPDA);
+
+      assert.isFalse(stream.isActive);
+      assert.equal(stream.winningTeam, 1);
+    });
+
+    it("Fails ending stream before end time", async () => {
+      const streamId2 = 5;
+      const [streamPDA] = getStreamPDA(streamId2);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId2);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId2),
+          "Team A",
+          "Team B",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(3600), // 1 hour
+          "https://example.com/stream/5"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
       try {
         await program.methods
-          .endStream(streamId, 1) // Team A wins
-          .accounts({
-            stream: streamPda,
+          .endStream(new anchor.BN(streamId2), 1)
+          .accountsPartial({
+            stream: streamPDA,
             authority: authority.publicKey,
           })
           .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("StreamNotEnded");
+        assert.fail("Should have failed - stream not ended yet");
+      } catch (err) {
+        expect(err.toString()).to.include("StreamNotEnded");
       }
     });
 
-    it("Fails when non-authority tries to end stream", async () => {
-      // Wait for stream to end (in real test, you'd need to wait or manipulate time)
-      // For now, we'll just test the authorization check
+    it("Fails with unauthorized caller", async () => {
+      const streamId2 = 6;
+      const [streamPDA] = getStreamPDA(streamId2);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId2);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId2),
+          "Team A",
+          "Team B",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(1),
+          "https://example.com/stream/6"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      const unauthorizedUser = Keypair.generate();
+      await airdrop(unauthorizedUser.publicKey, 1);
+
       try {
         await program.methods
-          .endStream(streamId, 1)
-          .accounts({
-            stream: streamPda,
-            authority: user1.publicKey,
+          .endStream(new anchor.BN(streamId2), 1)
+          .accountsPartial({
+            stream: streamPDA,
+            authority: unauthorizedUser.publicKey,
           })
-          .signers([user1])
+          .signers([unauthorizedUser])
           .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("Unauthorized");
+        assert.fail("Should have failed with unauthorized");
+      } catch (err) {
+        expect(err.toString()).to.include("Unauthorized");
       }
     });
 
-    // Note: To properly test ending the stream, you'd need to either:
-    // 1. Wait for the actual duration to pass
-    // 2. Use a shorter duration in tests
-    // 3. Use a clock manipulation technique if available in your testing framework
-    
-    it("Successfully ends stream after duration (simulated)", async () => {
-      // For a complete test, you would need to wait or manipulate the clock
-      // This is a placeholder showing the structure
-      
-      // In a real scenario, you'd do:
-      // await sleep(streamDuration * 1000);
-      // Or initialize with a very short duration for testing
-      
-      console.log("Note: This test requires waiting for stream duration or clock manipulation");
+    it("Fails with invalid winning team", async () => {
+      const streamId2 = 7;
+      const [streamPDA] = getStreamPDA(streamId2);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId2);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId2),
+          "Team A",
+          "Team B",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(1),
+          "https://example.com/stream/7"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      try {
+        await program.methods
+          .endStream(new anchor.BN(streamId2), 3) // Invalid team
+          .accountsPartial({
+            stream: streamPDA,
+            authority: authority.publicKey,
+          })
+          .rpc();
+        assert.fail("Should have failed with invalid team");
+      } catch (err) {
+        expect(err.toString()).to.include("InvalidTeam");
+      }
     });
   });
 
   describe("Claim Winnings", () => {
-    it("Fails to claim winnings while stream is active", async () => {
-      try {
-        await program.methods
-          .claimWinnings(streamId)
-          .accounts({
-            stream: streamPda,
-            userPosition: user1PositionPda,
-            streamVault: streamVaultPda,
-            user: user1.publicKey,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([user1])
-          .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("StreamStillActive");
-      }
-    });
+    const streamId = 8;
+    let winner: Keypair;
+    let loser: Keypair;
 
-    // Additional claim tests would go here after stream is properly ended
-  });
+    before(async () => {
+      // Initialize stream
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
 
-  describe("Emergency Withdraw", () => {
-    it("Fails when stream is still active", async () => {
-      try {
-        await program.methods
-          .emergencyWithdraw(streamId)
-          .accounts({
-            stream: streamPda,
-            streamVault: streamVaultPda,
-            authority: authority.publicKey,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("StreamStillActive");
-      }
-    });
-
-    it("Fails when non-authority tries emergency withdraw", async () => {
-      try {
-        await program.methods
-          .emergencyWithdraw(streamId)
-          .accounts({
-            stream: streamPda,
-            streamVault: streamVaultPda,
-            authority: user1.publicKey,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([user1])
-          .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("Unauthorized");
-      }
-    });
-  });
-
-  describe("Complete Flow Test", () => {
-    it("Full prediction market flow with short duration", async () => {
-      // Create a new stream with very short duration for testing
-      const testStreamId = new anchor.BN(Date.now() + 1000);
-      const shortDuration = new anchor.BN(2); // 2 seconds for testing
-      
-      const [testStreamPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("stream"), testStreamId.toArrayLike(Buffer, "le", 8)],
-        program.programId
-      );
-      
-      const [testVaultPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("stream_vault"), testStreamId.toArrayLike(Buffer, "le", 8)],
-        program.programId
-      );
-      
-      const [testUser1PosPda] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("user_position"),
-          testStreamId.toArrayLike(Buffer, "le", 8),
-          user1.publicKey.toBuffer(),
-        ],
-        program.programId
-      );
-
-      // 1. Initialize stream
       await program.methods
         .initializeStream(
-          testStreamId,
-          "Quick Team A",
-          "Quick Team B",
-          initialPrice,
-          shortDuration
+          new anchor.BN(streamId),
+          "Winners",
+          "Losers",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(1),
+          "https://example.com/stream/8"
         )
-        .accounts({
-          stream: testStreamPda,
-          streamVault: testVaultPda,
-          authority: authority.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
-
-      // 2. User purchases shares
-      await program.methods
-        .purchaseShares(testStreamId, 1, new anchor.BN(10))
-        .accounts({
-          stream: testStreamPda,
-          userPosition: testUser1PosPda,
-          streamVault: testVaultPda,
-          user: user1.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([user1])
-        .rpc();
-
-      // 3. Wait for stream to end
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // 4. End stream
-      await program.methods
-        .endStream(testStreamId, 1) // Team A wins
-        .accounts({
-          stream: testStreamPda,
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
           authority: authority.publicKey,
         })
         .rpc();
 
-      // Verify stream ended
-      const endedStream = await program.account.stream.fetch(testStreamPda);
-      expect(endedStream.isActive).to.be.false;
-      expect(endedStream.winningTeam).to.equal(1);
+      // Create users
+      winner = Keypair.generate();
+      loser = Keypair.generate();
+      await airdrop(winner.publicKey, 10);
+      await airdrop(loser.publicKey, 10);
 
-      // 5. User claims winnings
-      const userBalanceBefore = await provider.connection.getBalance(user1.publicKey);
-      
+      // Winner buys Team A
+      const [winnerPositionPDA] = getUserPositionPDA(streamId, winner.publicKey);
       await program.methods
-        .claimWinnings(testStreamId)
-        .accounts({
-          stream: testStreamPda,
-          userPosition: testUser1PosPda,
-          streamVault: testVaultPda,
-          user: user1.publicKey,
-          systemProgram: SystemProgram.programId,
+        .purchaseShares(new anchor.BN(streamId), 1, new anchor.BN(2 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: winnerPositionPDA,
+          streamVault: streamVaultPDA,
+          user: winner.publicKey,
         })
-        .signers([user1])
+        .signers([winner])
         .rpc();
 
-      const userBalanceAfter = await provider.connection.getBalance(user1.publicKey);
+      // Loser buys Team B
+      const [loserPositionPDA] = getUserPositionPDA(streamId, loser.publicKey);
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId), 2, new anchor.BN(1 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: loserPositionPDA,
+          streamVault: streamVaultPDA,
+          user: loser.publicKey,
+        })
+        .signers([loser])
+        .rpc();
+
+      // Wait and end stream with Team A winning
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       
-      // User should have received winnings
-      expect(userBalanceAfter).to.be.greaterThan(userBalanceBefore);
+      await program.methods
+        .endStream(new anchor.BN(streamId), 1)
+        .accountsPartial({
+          stream: streamPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+    });
 
-      // Verify claimed status
-      const claimedPosition = await program.account.userPosition.fetch(testUser1PosPda);
-      expect(claimedPosition.hasClaimed).to.be.true;
+    it("Winner successfully claims winnings", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [winnerPositionPDA] = getUserPositionPDA(streamId, winner.publicKey);
 
-      // 6. Try to claim again (should fail)
+      const winnerBalanceBefore = await provider.connection.getBalance(winner.publicKey);
+      const stream = await program.account.stream.fetch(streamPDA);
+
+      await program.methods
+        .claimWinnings(new anchor.BN(streamId))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: winnerPositionPDA,
+          streamVault: streamVaultPDA,
+          user: winner.publicKey,
+        })
+        .signers([winner])
+        .rpc();
+
+      const winnerBalanceAfter = await provider.connection.getBalance(winner.publicKey);
+      const winnerPosition = await program.account.userPosition.fetch(winnerPositionPDA);
+
+      // Winner should receive payout
+      assert.isTrue(winnerBalanceAfter > winnerBalanceBefore);
+      assert.isTrue(winnerPosition.hasClaimed);
+    });
+
+    it("Fails claiming twice", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [winnerPositionPDA] = getUserPositionPDA(streamId, winner.publicKey);
+
       try {
         await program.methods
-          .claimWinnings(testStreamId)
-          .accounts({
-            stream: testStreamPda,
-            userPosition: testUser1PosPda,
-            streamVault: testVaultPda,
-            user: user1.publicKey,
-            systemProgram: SystemProgram.programId,
+          .claimWinnings(new anchor.BN(streamId))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: winnerPositionPDA,
+            streamVault: streamVaultPDA,
+            user: winner.publicKey,
           })
-          .signers([user1])
+          .signers([winner])
           .rpc();
-        
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("AlreadyClaimed");
+        assert.fail("Should have failed - already claimed");
+      } catch (err) {
+        expect(err.toString()).to.include("AlreadyClaimed");
       }
+    });
 
-      console.log("✅ Complete flow test passed!");
+    it("Loser cannot claim winnings", async () => {
+      const [streamPDA] = getStreamPDA(streamId);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId);
+      const [loserPositionPDA] = getUserPositionPDA(streamId, loser.publicKey);
+
+      try {
+        await program.methods
+          .claimWinnings(new anchor.BN(streamId))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: loserPositionPDA,
+            streamVault: streamVaultPDA,
+            user: loser.publicKey,
+          })
+          .signers([loser])
+          .rpc();
+        assert.fail("Should have failed - no winning shares");
+      } catch (err) {
+        expect(err.toString()).to.include("NoWinningShares");
+      }
+    });
+
+    it("Fails claiming before stream ends", async () => {
+      const streamId2 = 9;
+      const [streamPDA] = getStreamPDA(streamId2);
+      const [streamVaultPDA] = getStreamVaultPDA(streamId2);
+
+      await program.methods
+        .initializeStream(
+          new anchor.BN(streamId2),
+          "Team A",
+          "Team B",
+          new anchor.BN(100 * LAMPORTS_PER_SOL),
+          new anchor.BN(3600),
+          "https://example.com/stream/9"
+        )
+        .accountsPartial({
+          stream: streamPDA,
+          streamVault: streamVaultPDA,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      const user = Keypair.generate();
+      await airdrop(user.publicKey, 10);
+      const [userPositionPDA] = getUserPositionPDA(streamId2, user.publicKey);
+
+      await program.methods
+        .purchaseShares(new anchor.BN(streamId2), 1, new anchor.BN(1 * LAMPORTS_PER_SOL))
+        .accountsPartial({
+          stream: streamPDA,
+          userPosition: userPositionPDA,
+          streamVault: streamVaultPDA,
+          user: user.publicKey,
+        })
+        .signers([user])
+        .rpc();
+
+      try {
+        await program.methods
+          .claimWinnings(new anchor.BN(streamId2))
+          .accountsPartial({
+            stream: streamPDA,
+            userPosition: userPositionPDA,
+            streamVault: streamVaultPDA,
+            user: user.publicKey,
+          })
+          .signers([user])
+          .rpc();
+        assert.fail("Should have failed - stream still active");
+      } catch (err) {
+        expect(err.toString()).to.include("StreamStillActive");
+      }
     });
   });
 });

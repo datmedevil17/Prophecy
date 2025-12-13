@@ -8,11 +8,16 @@ pub fn calculate_price(reserve_team: u64, reserve_opposite: u64) -> Result<u64> 
 
     // Price in lamports per share
     // Multiply by precision factor to avoid rounding to 0
-    reserve_opposite
+    // Use u128 to prevent overflow
+    let numerator = (reserve_opposite as u128)
         .checked_mul(1_000_000_000) // 1 SOL precision
-        .ok_or(ErrorCode::MathOverflow)?
-        .checked_div(reserve_team)
-        .ok_or(ErrorCode::MathOverflow.into())
+        .ok_or(ErrorCode::MathOverflow)?;
+
+    let price = numerator
+        .checked_div(reserve_team as u128)
+        .ok_or(ErrorCode::MathOverflow)? as u64;
+
+    Ok(price)
 }
 
 /// Calculate shares out using constant product formula

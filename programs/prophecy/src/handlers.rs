@@ -9,20 +9,19 @@ pub fn initialize_stream_handler(
     stream_id: u64,
     team_a_name: String,
     team_b_name: String,
-    initial_liquidity: u64, // NEW: Total virtual liquidity (e.g., 100 SOL = 100_000_000_000 lamports)
+    initial_liquidity: u64,
     stream_duration: i64,
     stream_link: String,
 ) -> Result<()> {
     require!(team_a_name.len() <= 32, ErrorCode::NameTooLong);
     require!(team_b_name.len() <= 32, ErrorCode::NameTooLong);
     require!(initial_liquidity > 0, ErrorCode::InvalidPrice);
-    require!(initial_liquidity % 2 == 0, ErrorCode::InvalidPrice); // Must be even for 50-50 split
+    require!(initial_liquidity % 2 == 0, ErrorCode::InvalidPrice);
     require!(stream_duration > 0, ErrorCode::InvalidDuration);
 
     let stream = &mut ctx.accounts.stream;
     let clock = Clock::get()?;
 
-    // Initialize with 50-50 reserves (equal odds)
     let half_liquidity = initial_liquidity
         .checked_div(2)
         .ok_or(ErrorCode::MathOverflow)?;
@@ -32,7 +31,6 @@ pub fn initialize_stream_handler(
     stream.team_a_name = team_a_name;
     stream.team_b_name = team_b_name;
 
-    // CPMM: Set initial reserves
     stream.team_a_reserve = half_liquidity;
     stream.team_b_reserve = half_liquidity;
 
@@ -46,7 +44,6 @@ pub fn initialize_stream_handler(
     stream.bump = ctx.bumps.stream;
     stream.stream_link = stream_link;
 
-    // Calculate initial price (should be 1.0 for equal reserves)
     let initial_price = calculate_price(stream.team_a_reserve, stream.team_b_reserve)?;
 
     emit!(StreamInitialized {
@@ -67,13 +64,12 @@ pub fn purchase_shares_handler(
     ctx: Context<PurchaseShares>,
     stream_id: u64,
     team_id: u8,
-    sol_amount: u64, // NEW: User specifies SOL to spend (in lamports)
+    sol_amount: u64,
 ) -> Result<()> {
     let stream = &mut ctx.accounts.stream;
     let user_position = &mut ctx.accounts.user_position;
     let clock = Clock::get()?;
 
-    // Validate stream is active
     require!(stream.is_active, ErrorCode::StreamNotActive);
     require!(
         clock.unix_timestamp < stream.end_time,
@@ -82,20 +78,16 @@ pub fn purchase_shares_handler(
     require!(team_id == 1 || team_id == 2, ErrorCode::InvalidTeam);
     require!(sol_amount > 0, ErrorCode::InvalidAmount);
 
-    // Get reserves for the team being purchased
     let (reserve_team, reserve_opposite) = if team_id == 1 {
         (stream.team_a_reserve, stream.team_b_reserve)
     } else {
         (stream.team_b_reserve, stream.team_a_reserve)
     };
 
-    // Calculate price before trade
     let price_before = calculate_price(reserve_team, reserve_opposite)?;
 
-    // CPMM: Calculate shares out using constant product formula
     let shares_out = calculate_shares_out(sol_amount, reserve_team, reserve_opposite)?;
 
-    // Transfer SOL from user to stream vault
     let cpi_context = CpiContext::new(
         ctx.accounts.system_program.to_account_info(),
         anchor_lang::system_program::Transfer {
@@ -105,7 +97,6 @@ pub fn purchase_shares_handler(
     );
     anchor_lang::system_program::transfer(cpi_context, sol_amount)?;
 
-    // Update stream reserves and shares
     if team_id == 1 {
         stream.team_a_reserve = stream
             .team_a_reserve
@@ -139,7 +130,6 @@ pub fn purchase_shares_handler(
         .checked_add(sol_amount)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    // Calculate price after trade
     let (reserve_team_after, reserve_opposite_after) = if team_id == 1 {
         (stream.team_a_reserve, stream.team_b_reserve)
     } else {
@@ -147,7 +137,6 @@ pub fn purchase_shares_handler(
     };
     let price_after = calculate_price(reserve_team_after, reserve_opposite_after)?;
 
-    // Update user position
     if user_position.user == Pubkey::default() {
         user_position.user = ctx.accounts.user.key();
         user_position.stream_id = stream_id;
@@ -200,7 +189,6 @@ pub fn sell_shares_handler(
     let user_position = &mut ctx.accounts.user_position;
     let clock = Clock::get()?;
 
-    // Validate stream is active
     require!(stream.is_active, ErrorCode::StreamNotActive);
     require!(
         clock.unix_timestamp < stream.end_time,
@@ -213,7 +201,6 @@ pub fn sell_shares_handler(
         ErrorCode::Unauthorized
     );
 
-    // Validate user has enough shares
     if team_id == 1 {
         require!(
             user_position.team_a_shares >= shares_amount,
@@ -226,24 +213,16 @@ pub fn sell_shares_handler(
         );
     }
 
-    // Get reserves for the team being sold
     let (reserve_team, reserve_opposite) = if team_id == 1 {
         (stream.team_a_reserve, stream.team_b_reserve)
     } else {
         (stream.team_b_reserve, stream.team_a_reserve)
     };
 
-    // Calculate price before trade
     let price_before = calculate_price(reserve_team, reserve_opposite)?;
 
-    // CPMM: Calculate SOL out using constant product formula
     let sol_out = calculate_sol_out(shares_amount, reserve_team, reserve_opposite)?;
 
-    // Update stream reserves and shares
-    // Selling shares:
-    // 1. Add shares back to team reserve
-    // 2. Remove SOL from opposite reserve (pay user)
-    // 3. Decrement shares sold count
     if team_id == 1 {
         stream.team_a_reserve = stream
             .team_a_reserve
@@ -277,19 +256,25 @@ pub fn sell_shares_handler(
         .checked_sub(sol_out)
         .ok_or(ErrorCode::MathOverflow)?;
 
-    // Transfer SOL from vault to user
-    **ctx
-        .accounts
-        .stream_vault
-        .to_account_info()
-        .try_borrow_mut_lamports()? -= sol_out;
-    **ctx
-        .accounts
-        .user
-        .to_account_info()
-        .try_borrow_mut_lamports()? += sol_out;
+    // Transfer SOL from vault to user using PDA seeds for signing
+    let stream_id_bytes = stream_id.to_le_bytes();
+    let seeds = &[
+        b"stream_vault".as_ref(),
+        stream_id_bytes.as_ref(),
+        &[ctx.bumps.stream_vault],
+    ];
+    let signer_seeds = &[&seeds[..]];
 
-    // Calculate price after trade
+    let transfer_ctx = CpiContext::new_with_signer(
+        ctx.accounts.system_program.to_account_info(),
+        anchor_lang::system_program::Transfer {
+            from: ctx.accounts.stream_vault.to_account_info(),
+            to: ctx.accounts.user.to_account_info(),
+        },
+        signer_seeds,
+    );
+    anchor_lang::system_program::transfer(transfer_ctx, sol_out)?;
+
     let (reserve_team_after, reserve_opposite_after) = if team_id == 1 {
         (stream.team_a_reserve, stream.team_b_reserve)
     } else {
@@ -297,7 +282,6 @@ pub fn sell_shares_handler(
     };
     let price_after = calculate_price(reserve_team_after, reserve_opposite_after)?;
 
-    // Update user position
     if team_id == 1 {
         user_position.team_a_shares = user_position
             .team_a_shares
@@ -312,13 +296,7 @@ pub fn sell_shares_handler(
 
     user_position.total_invested = user_position
         .total_invested
-        .checked_sub(sol_out) // Reduce total invested by amount withdrawn?
-        // OR keep track of net? usually we just track raw invested,
-        // but for simple PnL we might want to subtract.
-        // Let's stick to simple "money in - money out" logic for position tracking if needed,
-        // but `total_invested` usually implies total *spent*.
-        // However, if we don't reduce it, Pgl calcs might be weird.
-        // Let's reduce it to represent "current capital at risk".
+        .checked_sub(sol_out)
         .ok_or(ErrorCode::MathOverflow)?;
 
     emit!(SharesSold {
@@ -361,7 +339,6 @@ pub fn end_stream_handler(
     stream.is_active = false;
     stream.winning_team = winning_team;
 
-    // Calculate final prices for analytics
     let final_team_a_price = calculate_price(stream.team_a_reserve, stream.team_b_reserve)?;
     let final_team_b_price = calculate_price(stream.team_b_reserve, stream.team_a_reserve)?;
 
@@ -390,7 +367,6 @@ pub fn claim_winnings_handler(ctx: Context<ClaimWinnings>, stream_id: u64) -> Re
         ErrorCode::Unauthorized
     );
 
-    // Calculate user's winnings
     let user_winning_shares = if stream.winning_team == 1 {
         user_position.team_a_shares
     } else {
@@ -405,7 +381,6 @@ pub fn claim_winnings_handler(ctx: Context<ClaimWinnings>, stream_id: u64) -> Re
         stream.team_b_shares_sold
     };
 
-    // Calculate payout: (user_shares / total_winning_shares) * total_pool
     let payout = (stream.total_pool as u128)
         .checked_mul(user_winning_shares as u128)
         .ok_or(ErrorCode::MathOverflow)?
@@ -414,17 +389,24 @@ pub fn claim_winnings_handler(ctx: Context<ClaimWinnings>, stream_id: u64) -> Re
 
     require!(payout > 0, ErrorCode::NoPayout);
 
-    // Transfer winnings from vault to user
-    **ctx
-        .accounts
-        .stream_vault
-        .to_account_info()
-        .try_borrow_mut_lamports()? -= payout;
-    **ctx
-        .accounts
-        .user
-        .to_account_info()
-        .try_borrow_mut_lamports()? += payout;
+    // Transfer winnings from vault to user using PDA seeds for signing
+    let stream_id_bytes = stream_id.to_le_bytes();
+    let seeds = &[
+        b"stream_vault".as_ref(),
+        stream_id_bytes.as_ref(),
+        &[ctx.bumps.stream_vault],
+    ];
+    let signer_seeds = &[&seeds[..]];
+
+    let transfer_ctx = CpiContext::new_with_signer(
+        ctx.accounts.system_program.to_account_info(),
+        anchor_lang::system_program::Transfer {
+            from: ctx.accounts.stream_vault.to_account_info(),
+            to: ctx.accounts.user.to_account_info(),
+        },
+        signer_seeds,
+    );
+    anchor_lang::system_program::transfer(transfer_ctx, payout)?;
 
     user_position.has_claimed = true;
 
@@ -439,7 +421,7 @@ pub fn claim_winnings_handler(ctx: Context<ClaimWinnings>, stream_id: u64) -> Re
     Ok(())
 }
 
-pub fn emergency_withdraw_handler(ctx: Context<EmergencyWithdraw>, _stream_id: u64) -> Result<()> {
+pub fn emergency_withdraw_handler(ctx: Context<EmergencyWithdraw>, stream_id: u64) -> Result<()> {
     let stream = &mut ctx.accounts.stream;
 
     require!(
@@ -450,16 +432,24 @@ pub fn emergency_withdraw_handler(ctx: Context<EmergencyWithdraw>, _stream_id: u
 
     let vault_balance = ctx.accounts.stream_vault.to_account_info().lamports();
 
-    **ctx
-        .accounts
-        .stream_vault
-        .to_account_info()
-        .try_borrow_mut_lamports()? = 0;
-    **ctx
-        .accounts
-        .authority
-        .to_account_info()
-        .try_borrow_mut_lamports()? += vault_balance;
+    // Transfer all funds from vault to authority using PDA seeds for signing
+    let stream_id_bytes = stream_id.to_le_bytes();
+    let seeds = &[
+        b"stream_vault".as_ref(),
+        stream_id_bytes.as_ref(),
+        &[ctx.bumps.stream_vault],
+    ];
+    let signer_seeds = &[&seeds[..]];
+
+    let transfer_ctx = CpiContext::new_with_signer(
+        ctx.accounts.system_program.to_account_info(),
+        anchor_lang::system_program::Transfer {
+            from: ctx.accounts.stream_vault.to_account_info(),
+            to: ctx.accounts.authority.to_account_info(),
+        },
+        signer_seeds,
+    );
+    anchor_lang::system_program::transfer(transfer_ctx, vault_balance)?;
 
     Ok(())
 }
