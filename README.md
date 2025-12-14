@@ -3,7 +3,7 @@
 > **Live Sports. Real Stakes.**
 > Don't just watch the game. Own the outcome.
 
-![Prophecy Banner Image](PLACEHOLDER_BANNER_IMAGE_URL)
+<img width="1920" height="972" alt="Screenshot From 2025-12-12 16-10-54" src="https://github.com/user-attachments/assets/35d0938c-dd25-4c19-ba0f-fb8113046fcf" />
 
 ## About The Project
 
@@ -16,7 +16,10 @@ Instead of placing a one-time bet, users trade the outcome of a game like a stoc
 ### 📺 Live Stream & Trade
 Seamlessly integrated interface featuring low-latency live video streams (via YouTube/Twitch embeds) side-by-side with real-time price charts. Watch the action and the market simultaneously.
 
-![Stream Interface Screenshot](PLACEHOLDER_STREAM_INTERFACE_IMAGE)
+<img width="1920" height="972" alt="Screenshot From 2025-12-12 16-09-47" src="https://github.com/user-attachments/assets/6ff295a9-26d6-4429-a260-4e93727673ce" />
+
+<img width="1920" height="972" alt="Screenshot From 2025-12-12 16-14-20" src="https://github.com/user-attachments/assets/ee69a9b8-9501-49d7-b216-8cee78303890" />
+
 
 ### 📈 Dynamic Bonding Curves
 Powered by **Anchor** smart contracts on Solana, ensuring instant trade execution and automated market making. Price discovery happens in real-time based on buy/sell pressure.
@@ -26,12 +29,17 @@ Engage with other traders in dedicated, wallet-authenticated chat rooms for ever
 *   **Socket.io Powered:** Instant message delivery to all connected clients.
 *   **Wallet Identity:** Chat handle linked to your Solana wallet address for accountability and reputation.
 
-![Chat Interface Screenshot](PLACEHOLDER_CHAT_INTERFACE_IMAGE)
+<img width="1920" height="972" alt="Screenshot From 2025-12-12 23-06-57" src="https://github.com/user-attachments/assets/5accf163-9482-44bc-9330-1b3e3f668f65" />
+
+<img width="1920" height="972" alt="Screenshot From 2025-12-12 16-09-55" src="https://github.com/user-attachments/assets/380ef7c9-056e-4415-b998-cc1d8e452689" />
+
 
 ### 🧠 AI Assistant (Gemini)
 Built-in AI chatbot powered by Google Gemini to help you make smarter trades.
 *   Ask for match stats, player history, or contract details.
 *   Get real-time analysis of market trends.
+  <img width="1920" height="972" alt="Screenshot From 2025-12-12 16-11-01" src="https://github.com/user-attachments/assets/10eed85c-a6ea-4ef7-ab4a-250cc35423a5" />
+
 
 ### ⚡ Powered by Helius
 Utilizes Helius RPCs and event listeners to index on-chain events (Trade Executed, Stream Created, Winnings Claimed) into a MongoDB database for historical analysis and fast frontend retrieval.
