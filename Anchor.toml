@@ -6,12 +6,13 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-prophecy = "6CnHW1qeMyK5ApNw7dWiSZkGvtVv93nEhwyDY8dkBzB1"
+prophecy = "6H9g5sKUeNhfa9aw2Mz8b56YKD2uT83rH841vUD9i1Fw"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
+cluster = "devnet"
 cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
