@@ -14,6 +14,32 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "node:buffer": "buffer",
+      "node:crypto": "crypto",
+      "node:stream": "stream",
+      "node:path": "path",
+      "node:fs": "fs",
+      "node:os": "os",
+      "node:child_process": "child_process",
+      "stream/promises": "stream-browserify",
+      "vm": "vm-browserify",
+      "inquirer": false,
+    };
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      os: false,
+      path: false,
+      crypto: false,
+      child_process: false,
+      readline: false,
+      tty: false,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;

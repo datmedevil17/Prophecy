@@ -5,7 +5,8 @@ import { motion } from "motion/react"
 import { Users, Play, Loader2 } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
-import { getProvider, getAllStreams } from "@/services/service"
+import { BN } from "@coral-xyz/anchor"
+import { getProvider, getAllStreams, claimWinnings } from "@/services/service"
 
 // Helper to extract YouTube ID (reused)
 const getYoutubeId = (url: string) => {
@@ -20,11 +21,34 @@ export default function StreamsPage() {
   const [filteredStreams, setFilteredStreams] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"active" | "ended">("active")
+  const [claimingStreamId, setClaimingStreamId] = useState<string | null>(null)
 
   const program = useMemo(
     () => getProvider(publicKey, signTransaction, sendTransaction),
     [publicKey, signTransaction, sendTransaction]
   )
+
+  const handleClaim = async (e: React.MouseEvent, streamId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (!program || !publicKey) {
+      alert("Please connect your wallet")
+      return
+    }
+
+    setClaimingStreamId(streamId)
+    try {
+      const tx = await claimWinnings(program, program.provider.wallet as any, new BN(streamId))
+      console.log("Claimed winnings:", tx)
+      alert("Winnings claimed successfully!")
+    } catch (error) {
+      console.error("Error claiming winnings:", error)
+      alert("Failed to claim winnings. Maybe you didn't win or already claimed?")
+    } finally {
+      setClaimingStreamId(null)
+    }
+  }
 
   useEffect(() => {
     const fetchStreams = async () => {
@@ -185,7 +209,7 @@ export default function StreamsPage() {
                     </div>
                 </Link>
               ) : (
-                <div className="group relative bg-zinc-100 border-2 border-zinc-300 rounded-none overflow-hidden opacity-75 cursor-not-allowed">
+                <div className="group relative bg-zinc-100 border-2 border-zinc-300 rounded-none overflow-hidden">
                    {/* Thumbnail */}
                    <div className="aspect-video relative overflow-hidden border-b-2 border-zinc-300">
                      <img 
@@ -201,16 +225,33 @@ export default function StreamsPage() {
                    </div>
 
                    {/* Info */}
-                   <div className="p-4">
-                     <h3 className="text-lg font-bold text-zinc-500 mb-1 line-clamp-1 font-mono uppercase tracking-tight">
-                       {stream.title}
-                     </h3>
-                     <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest">
-                       HOST: {stream.streamer}
-                     </p>
-                     <p className="text-xs text-zinc-400 font-mono mt-1">
-                       ID: #{stream.id}
-                     </p>
+                   <div className="p-4 flex flex-col gap-3">
+                     <div>
+                        <h3 className="text-lg font-bold text-zinc-500 mb-1 line-clamp-1 font-mono uppercase tracking-tight">
+                        {stream.title}
+                        </h3>
+                        <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest">
+                        HOST: {stream.streamer}
+                        </p>
+                        <p className="text-xs text-zinc-400 font-mono mt-1">
+                        ID: #{stream.id}
+                        </p>
+                     </div>
+
+                     <button
+                        onClick={(e) => handleClaim(e, stream.id)}
+                        disabled={claimingStreamId === stream.id}
+                        className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white font-bold py-2 px-4 uppercase tracking-widest text-xs transition-colors flex items-center justify-center gap-2"
+                     >
+                        {claimingStreamId === stream.id ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Claiming...
+                            </>
+                        ) : (
+                            "Claim Winnings"
+                        )}
+                     </button>
                    </div>
                  </div>
               )}

@@ -2,10 +2,10 @@
 
 import Link from "next/link"
 import { motion } from "motion/react"
-import { Users, Play, Loader2, Trophy, Wallet, TrendingUp } from "lucide-react"
+import { Users, Play, Loader2, Trophy, Wallet, TrendingUp, AlertTriangle } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
-import { getProvider, getUsersStreams, getUserPositions, getStream } from "@/services/service"
+import { getProvider, getUsersStreams, getUserPositions, getStream, endStream } from "@/services/service"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
@@ -31,10 +31,42 @@ export default function ProfilePage() {
   const [portfolio, setPortfolio] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
+  // State for ending stream
+  const [endingStreamId, setEndingStreamId] = useState<string | null>(null)
+  const [selectedWinner, setSelectedWinner] = useState<number | null>(null) // 1 for Team A, 2 for Team B
+  const [isProcessingEnd, setIsProcessingEnd] = useState(false)
+
   const program = useMemo(
     () => getProvider(publicKey, signTransaction, sendTransaction),
     [publicKey, signTransaction, sendTransaction]
   )
+
+  const handleEndStream = async (streamId: string) => {
+    if (!program || !publicKey || !selectedWinner) return;
+
+    setIsProcessingEnd(true);
+    try {
+        const tx = await endStream(program, program.provider.wallet as any, new BN(streamId), selectedWinner);
+        console.log("Stream ended:", tx);
+        alert("Stream ended successfully!");
+        
+        // Refresh local state
+        setCreatedStreams(prev => prev.map(s => {
+            if (s.id === streamId) {
+                return { ...s, status: "Ended", winningTeam: selectedWinner };
+            }
+            return s;
+        }));
+        
+        setEndingStreamId(null);
+        setSelectedWinner(null);
+    } catch (error) {
+        console.error("Error ending stream:", error);
+        alert("Failed to end stream. Check console for details.");
+    } finally {
+        setIsProcessingEnd(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -50,6 +82,8 @@ export default function ProfilePage() {
           return {
             id: account.streamId.toString(),
             title: `${account.teamAName} vs ${account.teamBName}`,
+            teamAName: account.teamAName,
+            teamBName: account.teamBName,
             status: account.isActive ? "Active" : "Ended",
             thumbnail: videoId 
               ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` 
@@ -272,41 +306,93 @@ export default function ProfilePage() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.1 }}
                     >
-                      <Link href={`/streams/${stream.id}`}>
-                        <div className="group relative bg-white border-2 border-zinc-900 rounded-none overflow-hidden hover:shadow-[4px_4px_0px_0px_rgba(37,99,235,1)] transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
-                          {/* Thumbnail */}
-                          <div className="aspect-video relative overflow-hidden border-b-2 border-zinc-900">
-                             <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/10 transition-colors z-10" />
-                            <img 
-                              src={stream.thumbnail} 
-                              alt={stream.title}
-                              className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500 grayscale group-hover:grayscale-0"
-                            />
-                            <div className="absolute top-3 left-3 z-20">
-                              <div className={`px-2 py-1 rounded-none text-xs font-bold uppercase tracking-widest flex items-center gap-1.5 shadow-sm text-white border ${stream.status === 'Active' ? 'bg-green-600 border-green-800' : 'bg-zinc-600 border-zinc-800'}`}>
-                                {stream.status === 'Active' && <span className="w-1.5 h-1.5 bg-white animate-pulse" />}
-                                {stream.status}
-                              </div>
-                            </div>
-                             {/* Play Overlay */}
-                            <div className="absolute inset-0 z-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                <div className="p-3 bg-white border-2 border-zinc-900 text-zinc-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                                    <Play className="w-6 h-6 fill-current" />
-                                </div>
-                            </div>
-                          </div>
+                      {/* Interactive Card if Ending this stream, otherwise Link or Static */}
+                      {endingStreamId === stream.id ? (
+                        <div className="bg-white border-2 border-zinc-900 p-6 shadow-[4px_4px_0px_0px_rgba(37,99,235,1)]">
+                             <h3 className="text-lg font-bold text-zinc-900 mb-4 font-orbitron">End Stream #{stream.id}</h3>
+                             <p className="text-sm text-zinc-600 mb-4">Select the winning team to finalize the market. This action is irreversible.</p>
+                             
+                             <div className="space-y-3 mb-6">
+                                <button
+                                    onClick={() => setSelectedWinner(1)}
+                                    className={`w-full p-3 text-left border-2 transition-all ${selectedWinner === 1 ? 'border-green-600 bg-green-50' : 'border-zinc-200 hover:border-zinc-400'}`}
+                                >
+                                    <span className="font-bold block">{stream.teamAName}</span>
+                                    <span className="text-xs text-zinc-500 uppercase">Team A</span>
+                                </button>
+                                <button
+                                    onClick={() => setSelectedWinner(2)}
+                                    className={`w-full p-3 text-left border-2 transition-all ${selectedWinner === 2 ? 'border-green-600 bg-green-50' : 'border-zinc-200 hover:border-zinc-400'}`}
+                                >
+                                    <span className="font-bold block">{stream.teamBName}</span>
+                                    <span className="text-xs text-zinc-500 uppercase">Team B</span>
+                                </button>
+                             </div>
 
-                          {/* Info */}
-                          <div className="p-4">
-                            <h3 className="text-lg font-bold text-zinc-900 mb-1 line-clamp-1 font-mono uppercase tracking-tight group-hover:text-blue-600 transition-colors">
-                              {stream.title}
-                            </h3>
-                            <p className="text-xs text-zinc-400 font-mono mt-1">
-                              ID: #{stream.id}
-                            </p>
-                          </div>
+                             <div className="flex gap-2">
+                                <Button 
+                                    onClick={() => {
+                                        setEndingStreamId(null);
+                                        setSelectedWinner(null);
+                                    }}
+                                    variant="outline"
+                                    className="flex-1"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button 
+                                    onClick={() => handleEndStream(stream.id)}
+                                    disabled={!selectedWinner || isProcessingEnd}
+                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                    {isProcessingEnd ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm End"}
+                                </Button>
+                             </div>
                         </div>
-                      </Link>
+                      ) : (
+                        <div className="group relative bg-white border-2 border-zinc-900 rounded-none overflow-hidden hover:shadow-[4px_4px_0px_0px_rgba(37,99,235,1)] transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none h-full flex flex-col">
+                            {/* Visual part linking to stream details */}
+                            <Link href={`/streams/${stream.id}`} className="block flex-1">
+                                {/* Thumbnail */}
+                                <div className="aspect-video relative overflow-hidden border-b-2 border-zinc-900">
+                                    <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/10 transition-colors z-10" />
+                                    <img 
+                                    src={stream.thumbnail} 
+                                    alt={stream.title}
+                                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500 grayscale group-hover:grayscale-0"
+                                    />
+                                    <div className="absolute top-3 left-3 z-20">
+                                    <div className={`px-2 py-1 rounded-none text-xs font-bold uppercase tracking-widest flex items-center gap-1.5 shadow-sm text-white border ${stream.status === 'Active' ? 'bg-green-600 border-green-800' : 'bg-zinc-600 border-zinc-800'}`}>
+                                        {stream.status === 'Active' && <span className="w-1.5 h-1.5 bg-white animate-pulse" />}
+                                        {stream.status}
+                                    </div>
+                                    </div>
+                                </div>
+        
+                                {/* Info */}
+                                <div className="p-4">
+                                    <h3 className="text-lg font-bold text-zinc-900 mb-1 line-clamp-1 font-mono uppercase tracking-tight group-hover:text-blue-600 transition-colors">
+                                    {stream.title}
+                                    </h3>
+                                    <p className="text-xs text-zinc-400 font-mono mt-1">
+                                    ID: #{stream.id}
+                                    </p>
+                                </div>
+                            </Link>
+
+                            {/* Actions Area */}
+                            {stream.status === 'Active' && (
+                                <div className="p-4 pt-0 mt-auto">
+                                    <Button 
+                                        onClick={() => setEndingStreamId(stream.id)}
+                                        className="w-full bg-zinc-100 hover:bg-red-50 text-zinc-900 hover:text-red-600 border-2 border-zinc-200 hover:border-red-200 font-bold uppercase tracking-widest text-xs"
+                                    >
+                                        End Stream & Settle
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                      )}
                     </motion.div>
                   ))}
                 </div>

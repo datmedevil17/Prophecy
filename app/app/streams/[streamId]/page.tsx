@@ -5,12 +5,11 @@ import { motion } from "motion/react"
 import { StreamChat } from "@/components/stream-chat"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StockMarket } from "@/components/stock-market"
-import { Users, ThumbsUp, Share2, MoreHorizontal, Loader2 } from "lucide-react"
+import { Users, ThumbsUp, Share2, MoreHorizontal, Loader2, Camera } from "lucide-react"
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { getProvider, getStream } from "@/services/service"
 import { BN } from "@coral-xyz/anchor"
-
 // Helper to extract YouTube ID
 const getYoutubeId = (url: string) => {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -26,7 +25,8 @@ export default function StreamWatchPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("stream")
   const [selectedTeam, setSelectedTeam] = useState<'A' | 'B'>('A')
-
+  
+  
   const program = useMemo(
     () => getProvider(publicKey, signTransaction, sendTransaction),
     [publicKey, signTransaction, sendTransaction]
@@ -128,7 +128,9 @@ export default function StreamWatchPage() {
                 
                 <div className="flex-1 relative rounded-2xl overflow-hidden border border-zinc-200 bg-white shadow-sm">
                      {/* Video Player - Always mounted, toggle visibility */}
-                     <div className={`absolute inset-0 m-0 w-full h-full bg-black ${activeTab === 'stream' ? 'z-10' : 'z-0'}`}>
+                     <div id="video-container" className={`absolute inset-0 m-0 w-full h-full bg-black ${activeTab === 'stream' ? 'z-10' : 'z-0'} group`}>
+                         {/* Capture Overlay Button */}
+
                          {stream.youtubeId ? (
                              <iframe
                                 width="100%"
@@ -185,6 +187,7 @@ export default function StreamWatchPage() {
             />
         </div>
       </div>
+      
     </div>
   )
 }
