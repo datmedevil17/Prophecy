@@ -89,7 +89,7 @@ Turn any stream into a shareable, interactive **Blink**. Users can bet directly 
     ```env
     MONGO_URI=your_mongodb_connection_string
     HELIUS_RPC_URL=your_helius_rpc_url
-    NEXT_PUBLIC_GEMINI_API_KEY=your_gemini_key
+    NEXT_PUBLIC_RPC_URL=your_solana_rpc_url # Optional: Defaults to devnet
     ```
 
 ### Running the Application
