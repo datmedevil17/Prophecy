@@ -70,22 +70,56 @@ export default function ProfilePage() {
           try {
             const stream = await getStream(program, position.streamId);
             
-            const teamAShares = position.teamAShares.toNumber();
-            const teamBShares = position.teamBShares.toNumber();
+            // Format Atomic Shares to Whole Shares (1e9)
+            const formatShares = (shares: any) => {
+              const LAMPORTS = new BN(1000000000);
+              const bnShares = new BN(shares);
+              const integer = bnShares.div(LAMPORTS).toString();
+              const fractional = bnShares.mod(LAMPORTS).toString().padStart(9, '0').slice(0, 2);
+              return `${integer}.${fractional}`;
+            }
             
-            // Calculate current value based on stream prices
-            // Note: This is an estimation. Real sell price might differ due to bonding curve slippage if selling large amounts.
-            const currentValueLamports = 
-              (new BN(teamAShares).mul(stream.teamAPrice))
-              .add(new BN(teamBShares).mul(stream.teamBPrice));
+            // Calculate Prices locally (Reserve / Total Model)
+            const totalReserve = stream.teamAReserve.add(stream.teamBReserve);
+            const LAMPORTS = new BN(1000000000);
+            
+            const teamAPrice = totalReserve.isZero() 
+                 ? new BN(0) 
+                 : stream.teamAReserve.mul(LAMPORTS).div(totalReserve);
+            
+            const teamBPrice = totalReserve.isZero() 
+                 ? new BN(0) 
+                 : stream.teamBReserve.mul(LAMPORTS).div(totalReserve);
+
+            // Calculate Estimated Value using CPMM Sell Formula
+            // Formula: sol_out = (shares_in * reserve_opposite) / (reserve_team + shares_in)
+            // This accounts for slippage/liquidity.
+            
+            // Value for Team A Shares
+            let valueA = new BN(0);
+            if (position.teamAShares.gt(new BN(0))) {
+                const numerator = position.teamAShares.mul(stream.teamBReserve);
+                const denominator = stream.teamAReserve.add(position.teamAShares);
+                valueA = numerator.div(denominator);
+            }
+
+            // Value for Team B Shares
+            let valueB = new BN(0);
+            if (position.teamBShares.gt(new BN(0))) {
+                 const numerator = position.teamBShares.mul(stream.teamAReserve);
+                 const denominator = stream.teamBReserve.add(position.teamBShares);
+                 valueB = numerator.div(denominator);
+            }
+
+            const currentValueLamports = valueA.add(valueB);
 
             return {
               streamId: position.streamId.toString(),
               title: `${stream.teamAName} vs ${stream.teamBName}`,
               teamAName: stream.teamAName,
               teamBName: stream.teamBName,
-              teamAShares: teamAShares,
-              teamBShares: teamBShares,
+              teamAShares: formatShares(position.teamAShares),
+              teamBShares: formatShares(position.teamBShares),
               totalInvested: formatSol(position.totalInvested),
               currentValue: formatSol(currentValueLamports),
               hasClaimed: position.hasClaimed,

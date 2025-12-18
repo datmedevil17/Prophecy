@@ -1,5 +1,5 @@
 {
-  "address": "7Z3EDnUXfjLqN2SkkuEYyX6uNhmGQ9HWvJUXRwr9HKcd",
+  "address": "6CnHW1qeMyK5ApNw7dWiSZkGvtVv93nEhwyDY8dkBzB1",
   "metadata": {
     "name": "prediction_market",
     "version": "0.1.0",
@@ -9,6 +9,9 @@
   "instructions": [
     {
       "name": "claim_winnings",
+      "docs": [
+        "Claim winnings after stream has ended"
+      ],
       "discriminator": [
         161,
         215,
@@ -124,6 +127,9 @@
     },
     {
       "name": "emergency_withdraw",
+      "docs": [
+        "Emergency withdraw (authority only)"
+      ],
       "discriminator": [
         239,
         45,
@@ -199,13 +205,16 @@
       ],
       "args": [
         {
-          "name": "_stream_id",
+          "name": "stream_id",
           "type": "u64"
         }
       ]
     },
     {
       "name": "end_stream",
+      "docs": [
+        "End the stream and declare a winner"
+      ],
       "discriminator": [
         50,
         224,
@@ -344,7 +353,7 @@
           "type": "string"
         },
         {
-          "name": "initial_price",
+          "name": "initial_liquidity",
           "type": "u64"
         },
         {
@@ -476,7 +485,131 @@
           "type": "u8"
         },
         {
-          "name": "amount",
+          "name": "sol_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sell_shares",
+      "discriminator": [
+        184,
+        164,
+        169,
+        16,
+        231,
+        158,
+        199,
+        196
+      ],
+      "accounts": [
+        {
+          "name": "stream",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  101,
+                  97,
+                  109
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "stream_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "stream_id"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stream_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  101,
+                  97,
+                  109,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "stream_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "stream_id",
+          "type": "u64"
+        },
+        {
+          "name": "team_id",
+          "type": "u8"
+        },
+        {
+          "name": "shares_amount",
           "type": "u64"
         }
       ]
@@ -522,6 +655,19 @@
         182,
         47,
         22
+      ]
+    },
+    {
+      "name": "SharesSold",
+      "discriminator": [
+        35,
+        231,
+        5,
+        53,
+        228,
+        158,
+        113,
+        251
       ]
     },
     {
@@ -639,6 +785,11 @@
       "code": 6014,
       "name": "NoPayout",
       "msg": "No payout available"
+    },
+    {
+      "code": 6015,
+      "name": "InsufficientShares",
+      "msg": "Insufficient shares to sell"
     }
   ],
   "types": [
@@ -660,15 +811,71 @@
             "type": "u8"
           },
           {
-            "name": "amount",
+            "name": "sol_spent",
             "type": "u64"
           },
           {
-            "name": "price",
+            "name": "shares_received",
             "type": "u64"
           },
           {
-            "name": "total_cost",
+            "name": "price_before",
+            "type": "u64"
+          },
+          {
+            "name": "price_after",
+            "type": "u64"
+          },
+          {
+            "name": "reserve_team_before",
+            "type": "u64"
+          },
+          {
+            "name": "reserve_team_after",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SharesSold",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "stream_id",
+            "type": "u64"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "team_id",
+            "type": "u8"
+          },
+          {
+            "name": "shares_sold",
+            "type": "u64"
+          },
+          {
+            "name": "sol_received",
+            "type": "u64"
+          },
+          {
+            "name": "price_before",
+            "type": "u64"
+          },
+          {
+            "name": "price_after",
+            "type": "u64"
+          },
+          {
+            "name": "reserve_team_before",
+            "type": "u64"
+          },
+          {
+            "name": "reserve_team_after",
             "type": "u64"
           }
         ]
@@ -696,19 +903,19 @@
             "type": "string"
           },
           {
-            "name": "team_a_shares",
+            "name": "team_a_reserve",
             "type": "u64"
           },
           {
-            "name": "team_b_shares",
+            "name": "team_b_reserve",
             "type": "u64"
           },
           {
-            "name": "team_a_price",
+            "name": "team_a_shares_sold",
             "type": "u64"
           },
           {
-            "name": "team_b_price",
+            "name": "team_b_shares_sold",
             "type": "u64"
           },
           {
@@ -766,6 +973,14 @@
           {
             "name": "team_b_shares",
             "type": "u64"
+          },
+          {
+            "name": "final_team_a_price",
+            "type": "u64"
+          },
+          {
+            "name": "final_team_b_price",
+            "type": "u64"
           }
         ]
       }
@@ -790,6 +1005,10 @@
           {
             "name": "team_b_name",
             "type": "string"
+          },
+          {
+            "name": "initial_liquidity",
+            "type": "u64"
           },
           {
             "name": "initial_price",

@@ -29,6 +29,8 @@ import { initializeStream, getProvider, getNextStreamId } from '@/services/servi
 const formSchema = z.object({
   stream_id: z.string().min(1, {
     message: "A valid YouTube URL is required.",
+  }).refine((url) => !url.includes("/live/"), {
+    message: "Please use a standard YouTube video link, not a Live Stream link.",
   }),
   team_a_name: z.string().min(2, {
     message: "Team A name must be at least 2 characters.",
@@ -46,6 +48,8 @@ const formSchema = z.object({
 
 // Helper to extract YouTube ID
 const getYoutubeId = (url: string) => {
+  // Regex to match standard video IDs (v=...) or short URLs (youtu.be/...)
+  // Explicitly avoids /live/ path due to validation above, but good to be precise
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;

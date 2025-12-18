@@ -42,11 +42,18 @@ export default function StreamWatchPage() {
       const videoId = getYoutubeId(account.streamLink);
       
       // Conversions
-      // Assuming LAMPORTS_PER_SOL is 1e9
-      // Initial price is not stored in account, defaulting to 0.1 SOL
       const initialPrice = 0.1;
-      const teamAPrice = account.teamAPrice.toNumber() / 1000000000;
-      const teamBPrice = account.teamBPrice.toNumber() / 1000000000;
+      const LAMPORTS = 1000000000;
+
+      // Calculate Prices from Reserves (CPMM Ratio)
+      // Price A = Reserve B / Reserve A
+      const teamAPrice = account.teamAReserve.isZero()
+        ? 0
+        : account.teamBReserve.toNumber() / account.teamAReserve.toNumber();
+      
+      const teamBPrice = account.teamBReserve.isZero()
+        ? 0
+        : account.teamAReserve.toNumber() / account.teamBReserve.toNumber();
 
       setStream({
           title: `${account.teamAName} vs ${account.teamBName}`,
@@ -100,10 +107,24 @@ export default function StreamWatchPage() {
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col h-full bg-zinc-50/50">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col p-4">
-                <TabsList className="grid w-[400px] grid-cols-2 mb-4">
-                    <TabsTrigger value="stream">Live Stream</TabsTrigger>
-                    <TabsTrigger value="stocks">Prediction Market</TabsTrigger>
-                </TabsList>
+                <div className="flex justify-between items-center mb-4">
+                    <TabsList className="grid w-[400px] grid-cols-2">
+                        <TabsTrigger value="stream">Live Stream</TabsTrigger>
+                        <TabsTrigger value="stocks">Prediction Market</TabsTrigger>
+                    </TabsList>
+                    
+                    <button
+                        onClick={() => {
+                            const blinkUrl = `https://dial.to/?action=solana-action:${window.location.origin}/api/actions/bet/${streamIdStr}`;
+                            navigator.clipboard.writeText(blinkUrl);
+                            alert("Blink URL copied to clipboard!");
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 text-zinc-900 text-sm font-bold uppercase tracking-wider rounded-lg hover:bg-zinc-50 hover:border-zinc-300 transition-all shadow-sm active:scale-95"
+                    >
+                        <Share2 className="w-4 h-4" />
+                        Share Blink
+                    </button>
+                </div>
                 
                 <div className="flex-1 relative rounded-2xl overflow-hidden border border-zinc-200 bg-white shadow-sm">
                      {/* Video Player - Always mounted, toggle visibility */}

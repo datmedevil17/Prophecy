@@ -38,7 +38,7 @@ export const initializeStream = async (
   streamId: BN,
   teamAName: string,
   teamBName: string,
-  initialPrice: BN,
+  initialLiquidity: BN,
   streamDuration: BN,
   streamLink: string
 ): Promise<TransactionSignature> => {
@@ -57,7 +57,7 @@ export const initializeStream = async (
       streamId,
       teamAName,
       teamBName,
-      initialPrice,
+      initialLiquidity,
       streamDuration,
       streamLink
     )
@@ -114,6 +114,60 @@ export const purchaseShares = async (
 
   const tx = await program.methods
     .purchaseShares(streamId, teamId, amount)
+    .accountsPartial({
+      stream: streamPda,
+      userPosition: userPositionPda,
+      streamVault: streamVaultPda,
+      user: wallet.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+
+  const connection = new Connection(
+    program.provider.connection.rpcEndpoint,
+    "confirmed"
+  );
+
+  const latestBlockHash = await connection.getLatestBlockhash();
+  await connection.confirmTransaction(
+    {
+      blockhash: latestBlockHash.blockhash,
+      lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+      signature: tx,
+    },
+    "finalized"
+  );
+  return tx;
+};
+
+export const sellShares = async (
+  program: Program<PredictionMarket>,
+  wallet: Wallet,
+  streamId: BN,
+  teamId: number,
+  sharesAmount: BN
+): Promise<TransactionSignature> => {
+  const [streamPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("stream"), streamId.toArrayLike(Buffer, "le", 8)],
+    program.programId
+  );
+
+  const [userPositionPda] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("user_position"),
+      streamId.toArrayLike(Buffer, "le", 8),
+      wallet.publicKey.toBuffer(),
+    ],
+    program.programId
+  );
+
+  const [streamVaultPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("stream_vault"), streamId.toArrayLike(Buffer, "le", 8)],
+    program.programId
+  );
+
+  const tx = await program.methods
+    .sellShares(streamId, teamId, sharesAmount)
     .accountsPartial({
       stream: streamPda,
       userPosition: userPositionPda,
@@ -349,13 +403,33 @@ export const getStreamPrices = async (
   streamId: BN
 ) => {
   const stream = await getStream(program, streamId);
+  
+  const LAMPORTS = new BN(1000000000);
+  const totalReserve = stream.teamAReserve.add(stream.teamBReserve);
+
+  // Calculate Price as Probability: Reserve / Total Reserve
+  // Scaled to 1e9 to represent "Price per Whole Share (1e9 units) in Lamports"
+  // Example: Equal reserves -> 0.5 * 1e9 = 0.5 SOL price.
+  
+  const teamAPrice = totalReserve.isZero() 
+    ? new BN(0) 
+    : stream.teamAReserve.mul(LAMPORTS).div(totalReserve);
+
+  const teamBPrice = totalReserve.isZero() 
+    ? new BN(0) 
+    : stream.teamBReserve.mul(LAMPORTS).div(totalReserve);
+
   return {
     teamAName: stream.teamAName,
     teamBName: stream.teamBName,
-    teamAPrice: stream.teamAPrice,
-    teamBPrice: stream.teamBPrice,
-    teamAShares: stream.teamAShares,
-    teamBShares: stream.teamBShares,
+    teamAReserve: stream.teamAReserve,
+    teamBReserve: stream.teamBReserve,
+    teamASharesSold: stream.teamASharesSold,
+    teamBSharesSold: stream.teamBSharesSold,
     totalPool: stream.totalPool,
+    teamAPrice,
+    teamBPrice,
+    isActive: stream.isActive,
+    winningTeam: stream.winningTeam,
   };
 };

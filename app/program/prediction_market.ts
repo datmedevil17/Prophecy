@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/prediction_market.json`.
  */
 export type PredictionMarket = {
-  "address": "7Z3EDnUXfjLqN2SkkuEYyX6uNhmGQ9HWvJUXRwr9HKcd",
+  "address": "6CnHW1qeMyK5ApNw7dWiSZkGvtVv93nEhwyDY8dkBzB1",
   "metadata": {
     "name": "predictionMarket",
     "version": "0.1.0",
@@ -15,6 +15,9 @@ export type PredictionMarket = {
   "instructions": [
     {
       "name": "claimWinnings",
+      "docs": [
+        "Claim winnings after stream has ended"
+      ],
       "discriminator": [
         161,
         215,
@@ -130,6 +133,9 @@ export type PredictionMarket = {
     },
     {
       "name": "emergencyWithdraw",
+      "docs": [
+        "Emergency withdraw (authority only)"
+      ],
       "discriminator": [
         239,
         45,
@@ -212,6 +218,9 @@ export type PredictionMarket = {
     },
     {
       "name": "endStream",
+      "docs": [
+        "End the stream and declare a winner"
+      ],
       "discriminator": [
         50,
         224,
@@ -350,7 +359,7 @@ export type PredictionMarket = {
           "type": "string"
         },
         {
-          "name": "initialPrice",
+          "name": "initialLiquidity",
           "type": "u64"
         },
         {
@@ -482,7 +491,131 @@ export type PredictionMarket = {
           "type": "u8"
         },
         {
-          "name": "amount",
+          "name": "solAmount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sellShares",
+      "discriminator": [
+        184,
+        164,
+        169,
+        16,
+        231,
+        158,
+        199,
+        196
+      ],
+      "accounts": [
+        {
+          "name": "stream",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  101,
+                  97,
+                  109
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "streamId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "userPosition",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "streamId"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "streamVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  101,
+                  97,
+                  109,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "streamId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "streamId",
+          "type": "u64"
+        },
+        {
+          "name": "teamId",
+          "type": "u8"
+        },
+        {
+          "name": "sharesAmount",
           "type": "u64"
         }
       ]
@@ -528,6 +661,19 @@ export type PredictionMarket = {
         182,
         47,
         22
+      ]
+    },
+    {
+      "name": "sharesSold",
+      "discriminator": [
+        35,
+        231,
+        5,
+        53,
+        228,
+        158,
+        113,
+        251
       ]
     },
     {
@@ -645,6 +791,11 @@ export type PredictionMarket = {
       "code": 6014,
       "name": "noPayout",
       "msg": "No payout available"
+    },
+    {
+      "code": 6015,
+      "name": "insufficientShares",
+      "msg": "Insufficient shares to sell"
     }
   ],
   "types": [
@@ -666,15 +817,71 @@ export type PredictionMarket = {
             "type": "u8"
           },
           {
-            "name": "amount",
+            "name": "solSpent",
             "type": "u64"
           },
           {
-            "name": "price",
+            "name": "sharesReceived",
             "type": "u64"
           },
           {
-            "name": "totalCost",
+            "name": "priceBefore",
+            "type": "u64"
+          },
+          {
+            "name": "priceAfter",
+            "type": "u64"
+          },
+          {
+            "name": "reserveTeamBefore",
+            "type": "u64"
+          },
+          {
+            "name": "reserveTeamAfter",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sharesSold",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "streamId",
+            "type": "u64"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "teamId",
+            "type": "u8"
+          },
+          {
+            "name": "sharesSold",
+            "type": "u64"
+          },
+          {
+            "name": "solReceived",
+            "type": "u64"
+          },
+          {
+            "name": "priceBefore",
+            "type": "u64"
+          },
+          {
+            "name": "priceAfter",
+            "type": "u64"
+          },
+          {
+            "name": "reserveTeamBefore",
+            "type": "u64"
+          },
+          {
+            "name": "reserveTeamAfter",
             "type": "u64"
           }
         ]
@@ -702,19 +909,19 @@ export type PredictionMarket = {
             "type": "string"
           },
           {
-            "name": "teamAShares",
+            "name": "teamAReserve",
             "type": "u64"
           },
           {
-            "name": "teamBShares",
+            "name": "teamBReserve",
             "type": "u64"
           },
           {
-            "name": "teamAPrice",
+            "name": "teamASharesSold",
             "type": "u64"
           },
           {
-            "name": "teamBPrice",
+            "name": "teamBSharesSold",
             "type": "u64"
           },
           {
@@ -772,6 +979,14 @@ export type PredictionMarket = {
           {
             "name": "teamBShares",
             "type": "u64"
+          },
+          {
+            "name": "finalTeamAPrice",
+            "type": "u64"
+          },
+          {
+            "name": "finalTeamBPrice",
+            "type": "u64"
           }
         ]
       }
@@ -796,6 +1011,10 @@ export type PredictionMarket = {
           {
             "name": "teamBName",
             "type": "string"
+          },
+          {
+            "name": "initialLiquidity",
+            "type": "u64"
           },
           {
             "name": "initialPrice",
