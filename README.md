@@ -16,7 +16,8 @@ Instead of placing a one-time bet, users trade the outcome of a game like a stoc
 ### 📺 Live Stream & Trade
 Seamlessly integrated interface featuring low-latency live video streams (via YouTube/Twitch embeds) side-by-side with real-time price charts. Watch the action and the market simultaneously.
 
-<img width="1920" height="972" alt="Screenshot From 2025-12-12 16-09-47" src="https://github.com/user-attachments/assets/6ff295a9-26d6-4429-a260-4e93727673ce" />
+<img width="1920" height="1009" alt="Screenshot From 2025-12-18 22-43-40" src="https://github.com/user-attachments/assets/a8b989d5-2dc6-4661-9e57-2a5fdf37a09e" />
+
 
 <img width="1920" height="972" alt="Screenshot From 2025-12-12 16-14-20" src="https://github.com/user-attachments/assets/ee69a9b8-9501-49d7-b216-8cee78303890" />
 
@@ -33,6 +34,8 @@ Engage with other traders in dedicated, wallet-authenticated chat rooms for ever
 
 <img width="1920" height="972" alt="Screenshot From 2025-12-12 16-09-55" src="https://github.com/user-attachments/assets/380ef7c9-056e-4415-b998-cc1d8e452689" />
 
+<img width="1920" height="1009" alt="Screenshot From 2025-12-18 22-44-00" src="https://github.com/user-attachments/assets/b5c648e0-7a43-4d42-8a25-9c1c5a41d400" />
+
 
 ### 🧠 AI Assistant (Gemini)
 Built-in AI chatbot powered by Google Gemini to help you make smarter trades.
@@ -46,6 +49,8 @@ Utilizes Helius RPCs and event listeners to index on-chain events (Trade Execute
 
 ### 👀 Solana Blinks Support
 Turn any stream into a shareable, interactive **Blink**. Users can bet directly from Twitter (X) or other platforms via your shared link, thanks to standard Solana Actions integration.
+
+<img width="1920" height="1009" alt="Screenshot From 2025-12-18 19-51-11" src="https://github.com/user-attachments/assets/37fc69b0-edc4-48cf-91c2-0c255274a28f" />
 
 
 ## Tech Stack
