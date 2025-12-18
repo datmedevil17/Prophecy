@@ -111,7 +111,50 @@ Turn any stream into a shareable, interactive **Blink**. Users can bet directly 
 
 ## Architecture
 
-![Architecture Diagram](PLACEHOLDER_ARCHITECTURE_DIAGRAM_IMAGE)
+```mermaid
+graph TD
+    subgraph "Frontend Layer"
+        Client[Next.js Client]
+        Components[UI Components]
+        API[API Routes / Solana Actions]
+    end
+
+    subgraph "Backend Services"
+        Socket[Socket.io Server]
+        Listener[Helius Event Listener]
+        DB[(MongoDB)]
+    end
+
+    subgraph "Blockchain Infrastructure"
+        Solana[Solana Blockchain]
+        Program[Prediction Market Program]
+        Helius[Helius RPC & Webhooks]
+    end
+
+    subgraph "External Integration"
+        Blinks[Twitter/Blinks]
+    end
+
+    %% Client Interactions
+    Client -->|User Interactions| Components
+    Components -->|Read/Write| Solana
+    Components -->|Fetch History| API
+    Components -->|Real-time Chat| Socket
+
+    %% Backend flows
+    Socket -->|Store Messages| DB
+    API -->|Query Data| DB
+    API -->|Construct Transactions| Solana
+
+    %% Blockchain flows
+    Solana -->|Host| Program
+    Program -->|Emit Events| Helius
+    Helius -->|Notify| Listener
+    Listener -->|Index Events| DB
+
+    %% External
+    Blinks -->|POST Requests| API
+```
 
 The application follows a modular architecture:
 1.  **Smart Contracts:** Handle logic for creating streams, minting shares, and treasury management.
