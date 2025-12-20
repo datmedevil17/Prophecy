@@ -2,6 +2,9 @@
 
 > **Live Sports. Real Stakes.**
 > Don't just watch the game. Own the outcome.
+Video Link:
+> https://drive.google.com/file/d/1JvpiHtn21xQV3AsEyh8C40e82UJAncUO/view?usp=drive_link
+
 
 <img width="1920" height="972" alt="Screenshot From 2025-12-12 16-10-54" src="https://github.com/user-attachments/assets/35d0938c-dd25-4c19-ba0f-fb8113046fcf" />
 
