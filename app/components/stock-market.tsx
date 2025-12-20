@@ -5,10 +5,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { TrendingUp, TrendingDown, Activity } from "lucide-react"
 
-interface StockData {
+export interface StockData {
   time: number
   open: number
-  high: number
+  high: number;
   low: number
   close: number
 }
@@ -66,14 +66,24 @@ interface StockMarketProps {
     initialPrice?: number
     currentPrice?: number
     teamName?: string
+    data?: StockData[]
 }
 
-export function StockMarket({ initialPrice = 150, currentPrice = 150, teamName = "Market" }: StockMarketProps) {
+export function StockMarket({ initialPrice = 150, currentPrice = 150, teamName = "Market", data: providedData }: StockMarketProps) {
   const [data, setData] = useState<StockData[]>([])
   const [trend, setTrend] = useState<"up" | "down">("up")
 
   // Generate data path from initial to current
   useEffect(() => {
+    if (providedData && providedData.length > 0) {
+        setData(providedData);
+        // Determine trend from last candle
+        const lastCandle = providedData[providedData.length - 1];
+        const firstCandle = providedData[0];
+        setTrend(lastCandle.close >= firstCandle.open ? "up" : "down");
+        return;
+    }
+
     const steps = 50;
     const initialData: StockData[] = [];
     const now = Date.now();
@@ -128,7 +138,7 @@ export function StockMarket({ initialPrice = 150, currentPrice = 150, teamName =
     setData(initialData);
     setTrend(currentPrice >= initialPrice ? "up" : "down");
 
-  }, [initialPrice, currentPrice]);
+  }, [initialPrice, currentPrice, providedData]);
 
   const formatPrice = (price: number) => `$${price.toFixed(4)}`;
 

@@ -47,6 +47,8 @@ Built-in AI chatbot powered by Google Gemini to help you make smarter trades.
 ### ⚡ Powered by Helius
 Utilizes Helius RPCs and event listeners to index on-chain events (Trade Executed, Stream Created, Winnings Claimed) into a MongoDB database for historical analysis and fast frontend retrieval.
 
+![alt text](image.png)
+
 ### 👀 Solana Blinks Support
 Turn any stream into a shareable, interactive **Blink**. Users can bet directly from Twitter (X) or other platforms via your shared link, thanks to standard Solana Actions integration.
 
